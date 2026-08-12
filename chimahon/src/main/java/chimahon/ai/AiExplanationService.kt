@@ -36,8 +36,14 @@ class AiExplanationService(httpClient: OkHttpClient) {
         sentence: String,
     ): String {
         require(apiKey.isNotBlank()) { "Add an API key in Dictionary settings" }
-        require(profile.aiModelForProvider().isNotBlank()) { "Choose an AI model" }
-        if (profile.aiProvider == AnkiProfile.AI_PROVIDER_CUSTOM) {
+        if (profile.aiProvider != AnkiProfile.AI_PROVIDER_CUSTOM &&
+            profile.aiProvider != AnkiProfile.AI_PROVIDER_OPENAI_COMPATIBLE
+        ) {
+            require(profile.aiModelForProvider().isNotBlank()) { "Choose an AI model" }
+        }
+        if (profile.aiProvider == AnkiProfile.AI_PROVIDER_CUSTOM ||
+            profile.aiProvider == AnkiProfile.AI_PROVIDER_OPENAI_COMPATIBLE
+        ) {
             require(profile.aiCustomEndpoint.isNotBlank()) { "Add the full Custom API endpoint" }
         }
 
@@ -50,28 +56,21 @@ class AiExplanationService(httpClient: OkHttpClient) {
             AnkiProfile.AI_PROVIDER_DEEPSEEK -> buildDeepSeekRequest(renderedProfile, apiKey, prompt)
             AnkiProfile.AI_PROVIDER_CUSTOM,
             AnkiProfile.AI_PROVIDER_OPENAI_COMPATIBLE -> buildCustomRequest(renderedProfile, apiKey, prompt)
-            else -> buildOpenAiResponsesRequest(renderedProfile, apiKey, prompt)
+            else -> buildOpenAiChatRequest(renderedProfile, apiKey, prompt)
         }
         val responseBody = client.newCall(request).awaitBody()
         return when (profile.aiProvider) {
             AnkiProfile.AI_PROVIDER_GEMINI -> parseGeminiResponse(responseBody)
-            AnkiProfile.AI_PROVIDER_DEEPSEEK,
             AnkiProfile.AI_PROVIDER_CUSTOM,
-            AnkiProfile.AI_PROVIDER_OPENAI_COMPATIBLE -> parseChatCompletionsResponse(responseBody)
-            else -> parseOpenAiResponsesResponse(responseBody)
-        }.trim().ifBlank { throw IOException("The AI provider returned an empty response") }
+            AnkiProfile.AI_PROVIDER_OPENAI_COMPATIBLE -> parseCustomChatCompletionsResponse(responseBody)
+            else -> parseChatCompletionsResponse(responseBody)
+        }.trim().ifBlank { "No explanation available." }
     }
 
-    private fun buildOpenAiResponsesRequest(profile: AnkiProfile, apiKey: String, prompt: String): Request {
-        val body = JSONObject().apply {
-            put("model", profile.aiOpenAiModel)
-            if (profile.aiSystemPrompt.isNotBlank()) put("instructions", profile.aiSystemPrompt)
-            put("input", prompt)
-            put("temperature", profile.aiTemperature.toDouble())
-        }
+    private fun buildOpenAiChatRequest(profile: AnkiProfile, apiKey: String, prompt: String): Request {
         return jsonRequest(
-            url = OPENAI_RESPONSES_URL,
-            body = body,
+            url = OPENAI_CHAT_URL,
+            body = buildOpenAiRequestBody(profile, prompt),
             headers = mapOf("Authorization" to "Bearer ${apiKey.trim()}"),
         )
     }
@@ -144,7 +143,7 @@ class AiExplanationService(httpClient: OkHttpClient) {
 
     companion object {
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
-        private const val OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
+        private const val OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
         private const val DEEPSEEK_CHAT_URL = "https://api.deepseek.com/chat/completions"
         private const val GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
         private const val VERTEX_GEMINI_BASE_URL = "https://aiplatform.googleapis.com/v1/publishers/google/models"
@@ -155,9 +154,18 @@ class AiExplanationService(httpClient: OkHttpClient) {
                 .replace("{{sentence}}", sentence)
         }
 
+        internal fun buildOpenAiRequestBody(profile: AnkiProfile, prompt: String): JSONObject {
+            return buildChatCompletionsBody(
+                model = profile.aiOpenAiModel,
+                systemPrompt = profile.aiSystemPrompt,
+                prompt = prompt,
+                temperature = profile.aiTemperature,
+            )
+        }
+
         internal fun buildCustomRequestBody(profile: AnkiProfile, prompt: String): JSONObject {
             val body = buildChatCompletionsBody(
-                model = profile.aiCustomModel,
+                model = profile.aiCustomModel.ifBlank { "gpt-4o-mini" },
                 systemPrompt = profile.aiSystemPrompt,
                 prompt = prompt,
                 temperature = profile.aiTemperature,
@@ -376,30 +384,23 @@ class AiExplanationService(httpClient: OkHttpClient) {
             }
         }
 
-        internal fun parseOpenAiResponsesResponse(raw: String): String {
-            val json = Json.parseToJsonElement(raw) as? JsonObject ?: return ""
-            json.string("output_text").takeIf { it.isNotBlank() }?.let { return it }
-            val output = json["output"] as? JsonArray ?: return ""
-            return buildString {
-                for (item in output) {
-                    val content = (item as? JsonObject)?.get("content") as? JsonArray ?: continue
-                    for (contentItem in content) {
-                        val text = (contentItem as? JsonObject)?.string("text").orEmpty()
-                        if (text.isNotBlank()) {
-                            if (isNotEmpty()) append('\n')
-                            append(text)
-                        }
-                    }
-                }
-            }
-        }
-
         internal fun parseChatCompletionsResponse(raw: String): String {
             val json = Json.parseToJsonElement(raw) as? JsonObject ?: return ""
             val choices = json["choices"] as? JsonArray ?: return ""
             val first = choices.firstOrNull() as? JsonObject ?: return ""
             val message = first["message"] as? JsonObject
             return stringifyMessageContent(message?.get("content") ?: first["text"])
+        }
+
+        internal fun parseCustomChatCompletionsResponse(raw: String): String {
+            val json = Json.parseToJsonElement(raw) as? JsonObject ?: return ""
+            val choice = (json["choices"] as? JsonArray)?.firstOrNull() as? JsonObject
+            val error = choice?.get("error") as? JsonObject
+            if (error != null) {
+                val detail = error.string("message").ifBlank { error.toString() }
+                throw IOException("Custom API error: $detail")
+            }
+            return parseChatCompletionsResponse(raw)
         }
 
         private fun stringifyMessageContent(content: JsonElement?): String = when (content) {

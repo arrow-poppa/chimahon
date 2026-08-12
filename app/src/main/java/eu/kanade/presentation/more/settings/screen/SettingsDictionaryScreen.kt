@@ -583,7 +583,7 @@ object SettingsDictionaryScreen : SearchableSettings {
                                     AnkiProfile.AI_PROVIDER_DEEPSEEK -> "DeepSeek"
                                     AnkiProfile.AI_PROVIDER_CUSTOM,
                                     AnkiProfile.AI_PROVIDER_OPENAI_COMPATIBLE -> "Custom (OpenAI-compatible)"
-                                    else -> "OpenAI (Responses API)"
+                                    else -> "OpenAI"
                                 }
                                 OutlinedTextField(
                                     value = providerName,
@@ -598,7 +598,7 @@ object SettingsDictionaryScreen : SearchableSettings {
                                     onDismissRequest = { providerExpanded = false },
                                 ) {
                                     listOf(
-                                        AnkiProfile.AI_PROVIDER_OPENAI to "OpenAI (Responses API)",
+                                        AnkiProfile.AI_PROVIDER_OPENAI to "OpenAI",
                                         AnkiProfile.AI_PROVIDER_GEMINI to "Gemini",
                                         AnkiProfile.AI_PROVIDER_DEEPSEEK to "DeepSeek",
                                         AnkiProfile.AI_PROVIDER_CUSTOM to "Custom (OpenAI-compatible)",
@@ -732,13 +732,24 @@ object SettingsDictionaryScreen : SearchableSettings {
     ) {
         when (profile.aiProvider) {
             AnkiProfile.AI_PROVIDER_GEMINI -> {
-                OutlinedTextField(
+                AiDropdownField(
+                    label = "Gemini model",
                     value = profile.aiGeminiModel,
-                    onValueChange = { value -> updateProfile { it.copy(aiGeminiModel = value) } },
-                    label = { Text("Gemini model") },
-                    supportingText = { Text("Gemini 3.x models support the thinking level below.") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
+                    options = listOf(
+                        "gemini-2.5-flash" to "gemini-2.5-flash",
+                        "gemini-2.5-flash-lite" to "gemini-2.5-flash-lite",
+                        "gemini-2.5-flash-lite-preview-09-2025" to "gemini-2.5-flash-lite-preview-09-2025",
+                        "gemini-2.5-pro" to "gemini-2.5-pro",
+                        "gemini-2.0-flash" to "gemini-2.0-flash",
+                        "gemini-3.1-flash-lite-preview" to "gemini-3.1-flash-lite-preview",
+                        "gemini-3.1-flash-lite-preview-vertex" to "gemini-3.1-flash-lite-preview-vertex",
+                        "gemini-3.1-pro-preview" to "gemini-3.1-pro-preview",
+                        "gemini-3.1-pro-preview-vertex" to "gemini-3.1-pro-preview-vertex",
+                        "gemini-3-flash-preview-vertex" to "gemini-3-flash-preview-vertex",
+                        "gemini-3-flash-preview" to "gemini-3-flash-preview",
+                    ),
+                    onSelected = { value -> updateProfile { it.copy(aiGeminiModel = value) } },
+                    supportingText = "The same Gemini model list exposed by Yomitan.",
                 )
                 AiDropdownField(
                     label = "Thinking level",
@@ -784,13 +795,16 @@ object SettingsDictionaryScreen : SearchableSettings {
             AnkiProfile.AI_PROVIDER_CUSTOM,
             AnkiProfile.AI_PROVIDER_OPENAI_COMPATIBLE -> CustomAiProviderSettings(profile, updateProfile)
             else -> {
-                OutlinedTextField(
+                AiDropdownField(
+                    label = "OpenAI model",
                     value = profile.aiOpenAiModel,
-                    onValueChange = { value -> updateProfile { it.copy(aiOpenAiModel = value) } },
-                    label = { Text("OpenAI model") },
-                    supportingText = { Text("Uses OpenAI's Responses API.") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
+                    options = listOf(
+                        "gpt-4o-mini" to "gpt-4o-mini",
+                        "gpt-4o" to "gpt-4o",
+                        "gpt-3.5-turbo" to "gpt-3.5-turbo",
+                    ),
+                    onSelected = { value -> updateProfile { it.copy(aiOpenAiModel = value) } },
+                    supportingText = "Uses OpenAI Chat Completions, matching Yomitan.",
                 )
             }
         }

@@ -65,10 +65,10 @@ data class AnkiProfile(
     val aiProvider: String = AI_PROVIDER_OPENAI,
     val aiSystemPrompt: String = DEFAULT_AI_SYSTEM_PROMPT,
     val aiPrompt: String = DEFAULT_AI_PROMPT,
-    val aiTemperature: Float = 0.2f,
-    val aiAutoGenerate: Boolean = false,
+    val aiTemperature: Float = 0.7f,
+    val aiAutoGenerate: Boolean = true,
     val aiUnknownWordFallback: Boolean = false,
-    val aiOpenAiModel: String = "gpt-5-mini",
+    val aiOpenAiModel: String = "gpt-4o-mini",
     val aiGeminiModel: String = "gemini-2.5-flash",
     val aiGeminiThinkingLevel: String = THINKING_DEFAULT,
     val aiDeepSeekModel: String = "",
@@ -249,12 +249,12 @@ data class AnkiProfile(
             aiPrompt = json.optString("aiPrompt", DEFAULT_AI_PROMPT).let {
                 if (it == LEGACY_AI_PROMPT) DEFAULT_AI_PROMPT else it
             },
-            aiTemperature = json.optDouble("aiTemperature", 0.2).toFloat().coerceIn(0f, 2f),
-            aiAutoGenerate = json.optBoolean("aiAutoGenerate", false),
+            aiTemperature = json.optDouble("aiTemperature", 0.7).toFloat().coerceIn(0f, 2f),
+            aiAutoGenerate = json.optBoolean("aiAutoGenerate", true),
             aiUnknownWordFallback = json.optBoolean("aiUnknownWordFallback", false),
             aiOpenAiModel = json.optString(
                 "aiOpenAiModel",
-                legacyModel.takeIf { provider == AI_PROVIDER_OPENAI }.orEmpty().ifBlank { "gpt-5-mini" },
+                legacyModel.takeIf { provider == AI_PROVIDER_OPENAI }.orEmpty().ifBlank { "gpt-4o-mini" },
             ),
             aiGeminiModel = json.optString(
                 "aiGeminiModel",

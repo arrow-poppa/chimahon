@@ -1523,6 +1523,14 @@ class PlayerViewModel @JvmOverloads constructor(
         }
     }
 
+    fun toggleOcr() {
+        if (_ocrScreenshot.value != null) {
+            dismissOcrScreenshot()
+        } else {
+            requestOcr()
+        }
+    }
+
     fun dismissOcrScreenshot() {
         _ocrScreenshot.value = null
     }

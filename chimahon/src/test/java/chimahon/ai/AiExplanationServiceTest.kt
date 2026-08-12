@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.io.IOException
 
 class AiExplanationServiceTest {
 
@@ -88,6 +89,22 @@ class AiExplanationServiceTest {
     }
 
     @Test
+    fun `custom blank model falls back to Yomitan default`() {
+        val profile = AnkiProfile(
+            id = "test",
+            name = "Test",
+            aiProvider = AnkiProfile.AI_PROVIDER_CUSTOM,
+            aiCustomEndpoint = "https://openrouter.ai/api/v1/chat/completions",
+            aiCustomModel = "",
+        )
+
+        assertEquals(
+            "gpt-4o-mini",
+            AiExplanationService.buildCustomRequestBody(profile, "Explain it").getString("model"),
+        )
+    }
+
+    @Test
     fun `non openrouter thinking can be explicitly disabled`() {
         val profile = AnkiProfile(
             id = "test",
@@ -130,13 +147,25 @@ class AiExplanationServiceTest {
     }
 
     @Test
-    fun `responses output content is parsed`() {
-        assertEquals(
-            "First paragraph.\nSecond paragraph.",
-            AiExplanationService.parseOpenAiResponsesResponse(
-                """{"output":[{"content":[{"type":"output_text","text":"First paragraph."}]},{"content":[{"type":"output_text","text":"Second paragraph."}]}]}""",
-            ),
+    fun `openai uses chat completions messages like Yomitan`() {
+        val profile = AnkiProfile(
+            id = "test",
+            name = "Test",
+            aiOpenAiModel = "gpt-4o-mini",
+            aiSystemPrompt = "Tutor for {{target}}",
+            aiTemperature = 0.7f,
         )
+
+        val body = AiExplanationService.buildOpenAiRequestBody(profile, "Explain it")
+        val messages = body.getJSONArray("messages")
+
+        assertEquals("gpt-4o-mini", body.getString("model"))
+        assertFalse(body.has("input"))
+        assertEquals("system", messages.getJSONObject(0).getString("role"))
+        assertEquals("Tutor for {{target}}", messages.getJSONObject(0).getString("content"))
+        assertEquals("user", messages.getJSONObject(1).getString("role"))
+        assertEquals("Explain it", messages.getJSONObject(1).getString("content"))
+        assertEquals(0.7, body.getDouble("temperature"), 0.0001)
     }
 
     @Test
@@ -157,6 +186,17 @@ class AiExplanationServiceTest {
                 """{"choices":[{"message":{"content":[{"type":"text","text":"First "},{"content":"second"}]}}]}""",
             ),
         )
+    }
+
+    @Test
+    fun `custom choice error is surfaced like Yomitan`() {
+        val error = assertThrows(IOException::class.java) {
+            AiExplanationService.parseCustomChatCompletionsResponse(
+                """{"choices":[{"error":{"message":"Provider unavailable"}}]}""",
+            )
+        }
+
+        assertEquals("Custom API error: Provider unavailable", error.message)
     }
 
     @Test

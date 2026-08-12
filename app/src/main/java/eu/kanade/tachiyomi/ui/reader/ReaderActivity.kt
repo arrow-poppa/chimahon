@@ -835,10 +835,12 @@ class ReaderActivity : BaseActivity() {
 
                         lifecycleScope.launch(Dispatchers.Default) {
                             val result = try { deferredLookup.await() } catch (_: Exception) { null }
+                            if (!viewModel.isOcrEnabled()) return@launch
                             val firstMatched = result?.results?.firstOrNull()?.matched
                             val charCount = firstMatched?.codePointCount(0, firstMatched.length)
 
                             val rect = withContext(Dispatchers.Main) {
+                                if (!viewModel.isOcrEnabled()) return@withContext null
                                 if (charCount != null) {
                                     val pager = viewer.pager
                                     for (i in 0 until pager.childCount) {
@@ -849,7 +851,8 @@ class ReaderActivity : BaseActivity() {
                                 null as android.graphics.RectF?
                             }
 
-                                withContext(Dispatchers.Main) {
+                            withContext(Dispatchers.Main) {
+                                if (!viewModel.isOcrEnabled()) return@withContext
                                 val state = viewModel.state.value
                                 val mediaInfo = if (state.manga != null && state.currentChapter != null) {
                                     chimahon.MediaInfo(mangaTitle = state.manga!!.title, chapterName = state.currentChapter!!.chapter.name)
@@ -870,6 +873,7 @@ class ReaderActivity : BaseActivity() {
                 if (viewer.onShowOcrSelectionPanel == null) {
                     viewer.onShowOcrSelectionPanel = { text, anchorX, anchorY, anchorWidth, anchorHeight ->
                         runOnUiThread {
+                            if (!viewModel.isOcrEnabled()) return@runOnUiThread
                             ocrPopupVisible = false
                             ocrSelectionPanelState = OcrSelectionPanelState(
                                 text = text,
@@ -894,10 +898,12 @@ class ReaderActivity : BaseActivity() {
 
                         lifecycleScope.launch(Dispatchers.Default) {
                             val result = try { deferredLookup.await() } catch (_: Exception) { null }
+                            if (!viewModel.isOcrEnabled()) return@launch
                             val firstMatched = result?.results?.firstOrNull()?.matched
                             val charCount = firstMatched?.codePointCount(0, firstMatched.length)
 
                             val rect = withContext(Dispatchers.Main) {
+                                if (!viewModel.isOcrEnabled()) return@withContext null
                                 if (charCount != null) {
                                     val recycler = viewer.recycler
                                     for (i in 0 until recycler.childCount) {
@@ -908,7 +914,8 @@ class ReaderActivity : BaseActivity() {
                                 null as android.graphics.RectF?
                             }
 
-                                withContext(Dispatchers.Main) {
+                            withContext(Dispatchers.Main) {
+                                if (!viewModel.isOcrEnabled()) return@withContext
                                 val state = viewModel.state.value
                                 val mediaInfo = if (state.manga != null && state.currentChapter != null) {
                                     chimahon.MediaInfo(mangaTitle = state.manga!!.title, chapterName = state.currentChapter!!.chapter.name)
@@ -929,6 +936,7 @@ class ReaderActivity : BaseActivity() {
                 if (viewer.onShowOcrSelectionPanel == null) {
                     viewer.onShowOcrSelectionPanel = { text, anchorX, anchorY, anchorWidth, anchorHeight ->
                         runOnUiThread {
+                            if (!viewModel.isOcrEnabled()) return@runOnUiThread
                             ocrPopupVisible = false
                             ocrSelectionPanelState = OcrSelectionPanelState(
                                 text = text,
@@ -1222,6 +1230,8 @@ class ReaderActivity : BaseActivity() {
                 dictionaryRepository.warmUp(dictPaths, profile.id)
                 DictionaryPopupWebViewWarmup.warm(this@ReaderActivity, profile.languageCode)
             }
+        } else {
+            dismissReaderOcrOverlays()
         }
         when (val viewer = viewModel.state.value.viewer) {
             is PagerViewer -> viewer.setOcrEnabled(enabled)
@@ -1231,6 +1241,13 @@ class ReaderActivity : BaseActivity() {
         menuToggleToast = toast(
             if (enabled) MR.strings.action_enable_ocr else MR.strings.action_disable_ocr,
         )
+    }
+
+    private fun dismissReaderOcrOverlays() {
+        ocrPopupVisible = false
+        ocrPopupState = null
+        ocrSelectionPanelState = null
+        clearActiveOcrBlock()
     }
 
     private fun selectOcrSourceFromReader(source: ReaderOcrSource) {

@@ -251,7 +251,7 @@ fun PlayerControls(
         viewModel.dismissOcrScreenshot()
     }
     val captureVideoOcr = {
-        viewModel.requestOcr()
+        viewModel.toggleOcr()
     }
     GestureHandler(
         viewModel = viewModel,

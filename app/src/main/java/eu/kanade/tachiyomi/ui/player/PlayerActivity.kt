@@ -473,7 +473,7 @@ class PlayerActivity : BaseActivity() {
                     event.eventTime - twoFingerTapStartTime <= ViewConfiguration.getDoubleTapTimeout().toLong() &&
                     event.isTwoFingerTapCandidate()
                 ) {
-                    viewModel.requestOcr()
+                    viewModel.toggleOcr()
                 }
                 twoFingerTapTracking = false
                 twoFingerTapConsuming

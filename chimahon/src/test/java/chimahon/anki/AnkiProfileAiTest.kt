@@ -8,6 +8,15 @@ import org.junit.jupiter.api.Test
 class AnkiProfileAiTest {
 
     @Test
+    fun `fresh AI defaults match Yomitan`() {
+        val profile = AnkiProfile(id = "fresh", name = "Fresh")
+
+        assertEquals("gpt-4o-mini", profile.aiOpenAiModel)
+        assertEquals(0.7f, profile.aiTemperature)
+        assertEquals(true, profile.aiAutoGenerate)
+    }
+
+    @Test
     fun `custom AI settings survive profile serialization`() {
         val original = AnkiProfile(
             id = "profile",
