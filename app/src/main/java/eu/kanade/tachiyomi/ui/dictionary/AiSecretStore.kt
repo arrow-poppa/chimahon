@@ -46,6 +46,10 @@ class AiSecretStore(
 
     private fun normalizedProvider(provider: String): String = when (provider) {
         AnkiProfile.AI_PROVIDER_GEMINI -> "gemini"
+        AnkiProfile.AI_PROVIDER_DEEPSEEK -> "deepseek"
+        // Reuse the key slot from the first BYOK build when migrating to the
+        // Yomitan-compatible Custom provider name.
+        AnkiProfile.AI_PROVIDER_CUSTOM,
         AnkiProfile.AI_PROVIDER_OPENAI_COMPATIBLE -> "openai_compatible"
         else -> "openai"
     }

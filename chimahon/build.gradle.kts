@@ -79,5 +79,6 @@ dependencies {
 
     testImplementation(libs.bundles.test)
     testImplementation(kotlinx.coroutines.test)
+    testImplementation(libs.json.jvm)
     testRuntimeOnly(libs.junit.platform.launcher)
 }

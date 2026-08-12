@@ -63,14 +63,39 @@ data class AnkiProfile(
     // separately by the Android host and never serialized with the profile.
     val aiEnabled: Boolean = false,
     val aiProvider: String = AI_PROVIDER_OPENAI,
-    val aiEndpoint: String = "",
-    val aiModel: String = "gpt-5-mini",
     val aiSystemPrompt: String = DEFAULT_AI_SYSTEM_PROMPT,
     val aiPrompt: String = DEFAULT_AI_PROMPT,
     val aiTemperature: Float = 0.2f,
     val aiAutoGenerate: Boolean = false,
     val aiUnknownWordFallback: Boolean = false,
+    val aiOpenAiModel: String = "gpt-5-mini",
+    val aiGeminiModel: String = "gemini-2.5-flash",
+    val aiGeminiThinkingLevel: String = THINKING_DEFAULT,
+    val aiDeepSeekModel: String = "",
+    val aiDeepSeekThinkingMode: String = THINKING_DEFAULT,
+    val aiDeepSeekThinkingIntensity: String = THINKING_DEFAULT,
+    val aiCustomEndpoint: String = "",
+    val aiCustomModel: String = "",
+    val aiCustomProviderRoutingMode: String = ROUTING_DEFAULT,
+    val aiCustomProviderSlugs: String = "",
+    val aiCustomProviderAllowFallbacks: Boolean = true,
+    val aiCustomThinkingMode: String = THINKING_DEFAULT,
+    val aiCustomThinkingIntensity: String = THINKING_DEFAULT,
+    val aiCustomThinkingIntensityValue: String = "",
+    val aiCustomRequestBodyJson: String = "",
 ) {
+
+    fun aiModelForProvider(): String = when (aiProvider) {
+        AI_PROVIDER_GEMINI -> aiGeminiModel
+        AI_PROVIDER_DEEPSEEK -> aiDeepSeekModel
+        AI_PROVIDER_CUSTOM, AI_PROVIDER_OPENAI_COMPATIBLE -> aiCustomModel
+        else -> aiOpenAiModel
+    }
+
+    fun aiEndpointForProvider(): String = when (aiProvider) {
+        AI_PROVIDER_CUSTOM, AI_PROVIDER_OPENAI_COMPATIBLE -> aiCustomEndpoint
+        else -> ""
+    }
 
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
@@ -95,13 +120,30 @@ data class AnkiProfile(
         put("searchResolution", searchResolution)
         put("aiEnabled", aiEnabled)
         put("aiProvider", aiProvider)
-        put("aiEndpoint", aiEndpoint)
-        put("aiModel", aiModel)
+        // Keep the legacy active-provider aliases so profiles remain readable
+        // by builds created before provider-specific settings were introduced.
+        put("aiEndpoint", aiEndpointForProvider())
+        put("aiModel", aiModelForProvider())
         put("aiSystemPrompt", aiSystemPrompt)
         put("aiPrompt", aiPrompt)
         put("aiTemperature", aiTemperature.toDouble())
         put("aiAutoGenerate", aiAutoGenerate)
         put("aiUnknownWordFallback", aiUnknownWordFallback)
+        put("aiOpenAiModel", aiOpenAiModel)
+        put("aiGeminiModel", aiGeminiModel)
+        put("aiGeminiThinkingLevel", aiGeminiThinkingLevel)
+        put("aiDeepSeekModel", aiDeepSeekModel)
+        put("aiDeepSeekThinkingMode", aiDeepSeekThinkingMode)
+        put("aiDeepSeekThinkingIntensity", aiDeepSeekThinkingIntensity)
+        put("aiCustomEndpoint", aiCustomEndpoint)
+        put("aiCustomModel", aiCustomModel)
+        put("aiCustomProviderRoutingMode", aiCustomProviderRoutingMode)
+        put("aiCustomProviderSlugs", aiCustomProviderSlugs)
+        put("aiCustomProviderAllowFallbacks", aiCustomProviderAllowFallbacks)
+        put("aiCustomThinkingMode", aiCustomThinkingMode)
+        put("aiCustomThinkingIntensity", aiCustomThinkingIntensity)
+        put("aiCustomThinkingIntensityValue", aiCustomThinkingIntensityValue)
+        put("aiCustomRequestBodyJson", aiCustomRequestBodyJson)
     }
 
     companion object {
@@ -124,12 +166,38 @@ data class AnkiProfile(
         const val SEARCH_RESOLUTION_WORD = "word"
 
         const val AI_PROVIDER_OPENAI = "openai"
+        const val AI_PROVIDER_CUSTOM = "custom"
+        const val AI_PROVIDER_DEEPSEEK = "deepseek"
+        // Value written by the first Chimahon BYOK implementation.
         const val AI_PROVIDER_OPENAI_COMPATIBLE = "openai_compatible"
         const val AI_PROVIDER_GEMINI = "gemini"
+
+        const val THINKING_DEFAULT = ""
+        const val THINKING_ENABLED = "enabled"
+        const val THINKING_DISABLED = "disabled"
+        const val THINKING_INTENSITY_HIGH = "high"
+        const val THINKING_INTENSITY_MAX = "max"
+        const val THINKING_INTENSITY_CUSTOM = "custom"
+
+        const val ROUTING_DEFAULT = ""
+        const val ROUTING_ORDER = "order"
+        const val ROUTING_ONLY = "only"
+        const val ROUTING_IGNORE = "ignore"
+
         const val DEFAULT_AI_SYSTEM_PROMPT = "You are a concise language tutor. Explain the selected term using the supplied sentence context."
         const val DEFAULT_AI_PROMPT = "Explain {{target}} in this context:\n{{sentence}}"
 
-        fun fromJson(json: JSONObject): AnkiProfile = AnkiProfile(
+        fun fromJson(json: JSONObject): AnkiProfile {
+            val storedProvider = json.optString("aiProvider", AI_PROVIDER_OPENAI)
+            val legacyModel = json.optString("aiModel", "")
+            val legacyEndpoint = json.optString("aiEndpoint", "")
+            val provider = when {
+                storedProvider == AI_PROVIDER_OPENAI_COMPATIBLE -> AI_PROVIDER_CUSTOM
+                storedProvider == AI_PROVIDER_OPENAI && legacyEndpoint.isNotBlank() &&
+                    !legacyEndpoint.contains("api.openai.com", ignoreCase = true) -> AI_PROVIDER_CUSTOM
+                else -> storedProvider
+            }
+            return AnkiProfile(
             id = json.getString("id"),
             name = json.getString("name"),
             ankiEnabled = json.optBoolean("ankiEnabled", false),
@@ -172,15 +240,44 @@ data class AnkiProfile(
             scanResolution = json.optString("scanResolution", ""),
             searchResolution = json.optString("searchResolution", ""),
             aiEnabled = json.optBoolean("aiEnabled", false),
-            aiProvider = json.optString("aiProvider", AI_PROVIDER_OPENAI),
-            aiEndpoint = json.optString("aiEndpoint", ""),
-            aiModel = json.optString("aiModel", "gpt-5-mini"),
+            aiProvider = provider,
             aiSystemPrompt = json.optString("aiSystemPrompt", DEFAULT_AI_SYSTEM_PROMPT),
             aiPrompt = json.optString("aiPrompt", DEFAULT_AI_PROMPT),
             aiTemperature = json.optDouble("aiTemperature", 0.2).toFloat().coerceIn(0f, 2f),
             aiAutoGenerate = json.optBoolean("aiAutoGenerate", false),
             aiUnknownWordFallback = json.optBoolean("aiUnknownWordFallback", false),
+            aiOpenAiModel = json.optString(
+                "aiOpenAiModel",
+                legacyModel.takeIf { provider == AI_PROVIDER_OPENAI }.orEmpty().ifBlank { "gpt-5-mini" },
+            ),
+            aiGeminiModel = json.optString(
+                "aiGeminiModel",
+                legacyModel.takeIf { provider == AI_PROVIDER_GEMINI }.orEmpty().ifBlank { "gemini-2.5-flash" },
+            ),
+            aiGeminiThinkingLevel = json.optString("aiGeminiThinkingLevel", THINKING_DEFAULT),
+            aiDeepSeekModel = json.optString(
+                "aiDeepSeekModel",
+                legacyModel.takeIf { provider == AI_PROVIDER_DEEPSEEK }.orEmpty(),
+            ),
+            aiDeepSeekThinkingMode = json.optString("aiDeepSeekThinkingMode", THINKING_DEFAULT),
+            aiDeepSeekThinkingIntensity = json.optString("aiDeepSeekThinkingIntensity", THINKING_DEFAULT),
+            aiCustomEndpoint = json.optString(
+                "aiCustomEndpoint",
+                legacyEndpoint.takeIf { provider == AI_PROVIDER_CUSTOM }.orEmpty(),
+            ),
+            aiCustomModel = json.optString(
+                "aiCustomModel",
+                legacyModel.takeIf { provider == AI_PROVIDER_CUSTOM }.orEmpty(),
+            ),
+            aiCustomProviderRoutingMode = json.optString("aiCustomProviderRoutingMode", ROUTING_DEFAULT),
+            aiCustomProviderSlugs = json.optString("aiCustomProviderSlugs", ""),
+            aiCustomProviderAllowFallbacks = json.optBoolean("aiCustomProviderAllowFallbacks", true),
+            aiCustomThinkingMode = json.optString("aiCustomThinkingMode", THINKING_DEFAULT),
+            aiCustomThinkingIntensity = json.optString("aiCustomThinkingIntensity", THINKING_DEFAULT),
+            aiCustomThinkingIntensityValue = json.optString("aiCustomThinkingIntensityValue", ""),
+            aiCustomRequestBodyJson = json.optString("aiCustomRequestBodyJson", ""),
         )
+        }
 
         /**
          * Migrate legacy flat-key values (passed in from the UI/prefs layer,

@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
@@ -579,7 +580,9 @@ object SettingsDictionaryScreen : SearchableSettings {
                             ) {
                                 val providerName = when (activeProfile.aiProvider) {
                                     AnkiProfile.AI_PROVIDER_GEMINI -> "Gemini"
-                                    AnkiProfile.AI_PROVIDER_OPENAI_COMPATIBLE -> "OpenAI-compatible"
+                                    AnkiProfile.AI_PROVIDER_DEEPSEEK -> "DeepSeek"
+                                    AnkiProfile.AI_PROVIDER_CUSTOM,
+                                    AnkiProfile.AI_PROVIDER_OPENAI_COMPATIBLE -> "Custom (OpenAI-compatible)"
                                     else -> "OpenAI (Responses API)"
                                 }
                                 OutlinedTextField(
@@ -596,20 +599,14 @@ object SettingsDictionaryScreen : SearchableSettings {
                                 ) {
                                     listOf(
                                         AnkiProfile.AI_PROVIDER_OPENAI to "OpenAI (Responses API)",
-                                        AnkiProfile.AI_PROVIDER_OPENAI_COMPATIBLE to "OpenAI-compatible",
                                         AnkiProfile.AI_PROVIDER_GEMINI to "Gemini",
+                                        AnkiProfile.AI_PROVIDER_DEEPSEEK to "DeepSeek",
+                                        AnkiProfile.AI_PROVIDER_CUSTOM to "Custom (OpenAI-compatible)",
                                     ).forEach { (provider, label) ->
                                         DropdownMenuItem(
                                             text = { Text(label) },
                                             onClick = {
-                                                updateProfile { profile ->
-                                                    val nextModel = when {
-                                                        provider == AnkiProfile.AI_PROVIDER_GEMINI && profile.aiModel.startsWith("gpt-") -> "gemini-2.5-flash"
-                                                        provider != AnkiProfile.AI_PROVIDER_GEMINI && profile.aiModel.startsWith("gemini-") -> "gpt-5-mini"
-                                                        else -> profile.aiModel
-                                                    }
-                                                    profile.copy(aiProvider = provider, aiModel = nextModel)
-                                                }
+                                                updateProfile { profile -> profile.copy(aiProvider = provider) }
                                                 providerExpanded = false
                                                 connectionState = null
                                             },
@@ -625,7 +622,16 @@ object SettingsDictionaryScreen : SearchableSettings {
                                     secretStore.set(activeProfile.aiProvider, it)
                                     connectionState = null
                                 },
-                                label = { Text("API key") },
+                                label = {
+                                    Text(
+                                        when (activeProfile.aiProvider) {
+                                            AnkiProfile.AI_PROVIDER_GEMINI -> "Gemini API key"
+                                            AnkiProfile.AI_PROVIDER_DEEPSEEK -> "DeepSeek API key"
+                                            AnkiProfile.AI_PROVIDER_CUSTOM -> "Custom API key"
+                                            else -> "OpenAI API key"
+                                        },
+                                    )
+                                },
                                 singleLine = true,
                                 visualTransformation = if (showApiKey) VisualTransformation.None else PasswordVisualTransformation(),
                                 trailingIcon = {
@@ -638,28 +644,9 @@ object SettingsDictionaryScreen : SearchableSettings {
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                             )
-                            OutlinedTextField(
-                                value = activeProfile.aiModel,
-                                onValueChange = { value -> updateProfile { it.copy(aiModel = value) } },
-                                label = { Text("Model") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                            OutlinedTextField(
-                                value = activeProfile.aiEndpoint,
-                                onValueChange = { value -> updateProfile { it.copy(aiEndpoint = value) } },
-                                label = { Text("Custom endpoint (optional)") },
-                                supportingText = {
-                                    Text(
-                                        if (activeProfile.aiProvider == AnkiProfile.AI_PROVIDER_GEMINI) {
-                                            "Leave blank for Google; {{model}} is supported in custom URLs."
-                                        } else {
-                                            "Leave blank for the provider default. A URL ending in /v1 is completed automatically."
-                                        },
-                                    )
-                                },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
+                            AiProviderSettings(
+                                profile = activeProfile,
+                                updateProfile = ::updateProfile,
                             )
                             OutlinedTextField(
                                 value = activeProfile.aiSystemPrompt,
@@ -737,6 +724,227 @@ object SettingsDictionaryScreen : SearchableSettings {
             ),
         )
     }
+
+    @Composable
+    private fun AiProviderSettings(
+        profile: AnkiProfile,
+        updateProfile: ((AnkiProfile) -> AnkiProfile) -> Unit,
+    ) {
+        when (profile.aiProvider) {
+            AnkiProfile.AI_PROVIDER_GEMINI -> {
+                OutlinedTextField(
+                    value = profile.aiGeminiModel,
+                    onValueChange = { value -> updateProfile { it.copy(aiGeminiModel = value) } },
+                    label = { Text("Gemini model") },
+                    supportingText = { Text("Gemini 3.x models support the thinking level below.") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                AiDropdownField(
+                    label = "Thinking level",
+                    value = profile.aiGeminiThinkingLevel,
+                    options = listOf(
+                        "" to "Default",
+                        "MINIMAL" to "Minimal",
+                        "LOW" to "Low",
+                        "MEDIUM" to "Medium",
+                        "HIGH" to "High",
+                    ),
+                    onSelected = { value -> updateProfile { it.copy(aiGeminiThinkingLevel = value) } },
+                    supportingText = "Applied to Gemini 3.x; incompatible levels are normalized for Gemini 3 Pro.",
+                )
+            }
+            AnkiProfile.AI_PROVIDER_DEEPSEEK -> {
+                OutlinedTextField(
+                    value = profile.aiDeepSeekModel,
+                    onValueChange = { value -> updateProfile { it.copy(aiDeepSeekModel = value) } },
+                    label = { Text("DeepSeek model ID") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                AiDropdownField(
+                    label = "DeepSeek thinking mode",
+                    value = profile.aiDeepSeekThinkingMode,
+                    options = thinkingModeOptions,
+                    onSelected = { value -> updateProfile { it.copy(aiDeepSeekThinkingMode = value) } },
+                    supportingText = "Default leaves the choice to the API; Disabled requests a non-thinking response.",
+                )
+                AiDropdownField(
+                    label = "DeepSeek thinking effort",
+                    value = profile.aiDeepSeekThinkingIntensity,
+                    options = listOf(
+                        "" to "Default",
+                        AnkiProfile.THINKING_INTENSITY_HIGH to "High",
+                        AnkiProfile.THINKING_INTENSITY_MAX to "Max",
+                    ),
+                    onSelected = { value -> updateProfile { it.copy(aiDeepSeekThinkingIntensity = value) } },
+                    supportingText = "Controls reasoning depth when the selected DeepSeek model supports it.",
+                )
+            }
+            AnkiProfile.AI_PROVIDER_CUSTOM,
+            AnkiProfile.AI_PROVIDER_OPENAI_COMPATIBLE -> CustomAiProviderSettings(profile, updateProfile)
+            else -> {
+                OutlinedTextField(
+                    value = profile.aiOpenAiModel,
+                    onValueChange = { value -> updateProfile { it.copy(aiOpenAiModel = value) } },
+                    label = { Text("OpenAI model") },
+                    supportingText = { Text("Uses OpenAI's Responses API.") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+
+    @Composable
+    private fun CustomAiProviderSettings(
+        profile: AnkiProfile,
+        updateProfile: ((AnkiProfile) -> AnkiProfile) -> Unit,
+    ) {
+        OutlinedTextField(
+            value = profile.aiCustomEndpoint,
+            onValueChange = { value -> updateProfile { it.copy(aiCustomEndpoint = value) } },
+            label = { Text("Custom endpoint") },
+            supportingText = {
+                Text("Full OpenAI-compatible chat completions URL, for example https://openrouter.ai/api/v1/chat/completions")
+            },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value = profile.aiCustomModel,
+            onValueChange = { value -> updateProfile { it.copy(aiCustomModel = value) } },
+            label = { Text("Custom model ID") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        AiDropdownField(
+            label = "OpenRouter provider routing",
+            value = profile.aiCustomProviderRoutingMode,
+            options = listOf(
+                "" to "Default",
+                AnkiProfile.ROUTING_ORDER to "Prioritize listed providers",
+                AnkiProfile.ROUTING_ONLY to "Only listed providers",
+                AnkiProfile.ROUTING_IGNORE to "Ignore listed providers",
+            ),
+            onSelected = { value -> updateProfile { it.copy(aiCustomProviderRoutingMode = value) } },
+            supportingText = "Sent only when the Custom endpoint is hosted by OpenRouter.",
+        )
+        OutlinedTextField(
+            value = profile.aiCustomProviderSlugs,
+            onValueChange = { value -> updateProfile { it.copy(aiCustomProviderSlugs = value) } },
+            label = { Text("OpenRouter provider slugs") },
+            supportingText = { Text("Separate slugs with commas or new lines, e.g. deepinfra/turbo, fireworks.") },
+            minLines = 1,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Allow OpenRouter fallbacks")
+                Text(
+                    "Allow backup providers when the selected provider is unavailable.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Switch(
+                checked = profile.aiCustomProviderAllowFallbacks,
+                onCheckedChange = { value -> updateProfile { it.copy(aiCustomProviderAllowFallbacks = value) } },
+            )
+        }
+        AiDropdownField(
+            label = "Custom thinking mode",
+            value = profile.aiCustomThinkingMode,
+            options = thinkingModeOptions,
+            onSelected = { value -> updateProfile { it.copy(aiCustomThinkingMode = value) } },
+            supportingText = "Uses OpenRouter reasoning options or DeepSeek-style thinking on other compatible APIs.",
+        )
+        AiDropdownField(
+            label = "Custom thinking effort",
+            value = profile.aiCustomThinkingIntensity,
+            options = listOf(
+                "" to "Default",
+                AnkiProfile.THINKING_INTENSITY_HIGH to "High",
+                AnkiProfile.THINKING_INTENSITY_MAX to "Max",
+                AnkiProfile.THINKING_INTENSITY_CUSTOM to "Custom",
+            ),
+            onSelected = { value -> updateProfile { it.copy(aiCustomThinkingIntensity = value) } },
+            supportingText = "Max maps to xhigh on OpenRouter. Choose Custom to send the manual value below.",
+        )
+        if (profile.aiCustomThinkingIntensity == AnkiProfile.THINKING_INTENSITY_CUSTOM) {
+            OutlinedTextField(
+                value = profile.aiCustomThinkingIntensityValue,
+                onValueChange = { value -> updateProfile { it.copy(aiCustomThinkingIntensityValue = value) } },
+                label = { Text("Custom thinking effort value") },
+                supportingText = {
+                    Text("Use an effort such as medium, a token count such as 2000, or JSON such as {\"max_tokens\":2000}.")
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        OutlinedTextField(
+            value = profile.aiCustomRequestBodyJson,
+            onValueChange = { value -> updateProfile { it.copy(aiCustomRequestBodyJson = value) } },
+            label = { Text("Custom request body JSON") },
+            supportingText = {
+                Text("Optional JSON object merged last into the request. Its values override generated fields.")
+            },
+            placeholder = { Text("{\"reasoning\":{\"max_tokens\":2000}}") },
+            minLines = 3,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    private fun AiDropdownField(
+        label: String,
+        value: String,
+        options: List<Pair<String, String>>,
+        onSelected: (String) -> Unit,
+        supportingText: String,
+    ) {
+        var expanded by remember { mutableStateOf(false) }
+        val selectedLabel = options.firstOrNull { it.first == value }?.second ?: value.ifBlank { "Default" }
+        ExposedDropdownMenuBox(
+            expanded = expanded,
+            onExpandedChange = { expanded = it },
+        ) {
+            OutlinedTextField(
+                value = selectedLabel,
+                onValueChange = {},
+                readOnly = true,
+                label = { Text(label) },
+                supportingText = { Text(supportingText) },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+                modifier = Modifier.menuAnchor().fillMaxWidth(),
+            )
+            ExposedDropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+            ) {
+                options.forEach { (optionValue, optionLabel) ->
+                    DropdownMenuItem(
+                        text = { Text(optionLabel) },
+                        onClick = {
+                            onSelected(optionValue)
+                            expanded = false
+                        },
+                    )
+                }
+            }
+        }
+    }
+
+    private val thinkingModeOptions = listOf(
+        "" to "Default",
+        AnkiProfile.THINKING_ENABLED to "Enabled",
+        AnkiProfile.THINKING_DISABLED to "Disabled",
+    )
 
     @Composable
     private fun getDictionaryUpdatesGroup(): Preference.PreferenceGroup {

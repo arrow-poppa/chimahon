@@ -51,9 +51,10 @@ fun AiExplanationCard(
 
     val repository = remember { Injekt.get<AiExplanationRepository>() }
     val scope = rememberCoroutineScope()
-    var explanation by remember(profile.aiProvider, profile.aiModel, target, sentence) { mutableStateOf("") }
-    var error by remember(profile.aiProvider, profile.aiModel, target, sentence) { mutableStateOf<String?>(null) }
-    var loading by remember(profile.aiProvider, profile.aiModel, target, sentence) { mutableStateOf(false) }
+    val activeModel = profile.aiModelForProvider()
+    var explanation by remember(profile.aiProvider, activeModel, target, sentence) { mutableStateOf("") }
+    var error by remember(profile.aiProvider, activeModel, target, sentence) { mutableStateOf<String?>(null) }
+    var loading by remember(profile.aiProvider, activeModel, target, sentence) { mutableStateOf(false) }
     var requestJob by remember { mutableStateOf<Job?>(null) }
 
     fun generate(bypassCache: Boolean) {

@@ -21,8 +21,7 @@ class AiExplanationRepository(
         val key = CacheKey(
             profileId = profile.id,
             provider = profile.aiProvider,
-            endpoint = profile.aiEndpoint,
-            model = profile.aiModel,
+            providerSettings = profile.aiProviderSettingsCacheKey(),
             systemPrompt = profile.aiSystemPrompt,
             prompt = profile.aiPrompt,
             temperature = profile.aiTemperature,
@@ -60,8 +59,7 @@ class AiExplanationRepository(
     private data class CacheKey(
         val profileId: String,
         val provider: String,
-        val endpoint: String,
-        val model: String,
+        val providerSettings: String,
         val systemPrompt: String,
         val prompt: String,
         val temperature: Float,
@@ -75,4 +73,26 @@ class AiExplanationRepository(
         private const val CACHE_TTL_MS = 60_000L
         private const val MAX_CACHE_ENTRIES = 32
     }
+}
+
+private fun AnkiProfile.aiProviderSettingsCacheKey(): String = when (aiProvider) {
+    AnkiProfile.AI_PROVIDER_GEMINI -> listOf(aiGeminiModel, aiGeminiThinkingLevel).joinToString("\u0000")
+    AnkiProfile.AI_PROVIDER_DEEPSEEK -> listOf(
+        aiDeepSeekModel,
+        aiDeepSeekThinkingMode,
+        aiDeepSeekThinkingIntensity,
+    ).joinToString("\u0000")
+    AnkiProfile.AI_PROVIDER_CUSTOM,
+    AnkiProfile.AI_PROVIDER_OPENAI_COMPATIBLE -> listOf(
+        aiCustomEndpoint,
+        aiCustomModel,
+        aiCustomProviderRoutingMode,
+        aiCustomProviderSlugs,
+        aiCustomProviderAllowFallbacks.toString(),
+        aiCustomThinkingMode,
+        aiCustomThinkingIntensity,
+        aiCustomThinkingIntensityValue,
+        aiCustomRequestBodyJson,
+    ).joinToString("\u0000")
+    else -> aiOpenAiModel
 }
