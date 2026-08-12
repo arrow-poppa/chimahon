@@ -144,12 +144,13 @@ fun AiExplanationCard(
                         if (value.text == explanation) {
                             explanationField = value
                             val selection = value.selection
-                            val selectedText = if (selection.collapsed) {
-                                ""
-                            } else {
-                                explanation.substring(selection.min, selection.max)
+                            if (!selection.collapsed) {
+                                // Keep the last non-empty selection pending when focus
+                                // moves to the WebView's Anki button, like Yomitan does.
+                                onSelectedTextChanged(
+                                    explanation.substring(selection.min, selection.max),
+                                )
                             }
-                            onSelectedTextChanged(selectedText)
                         }
                     },
                     readOnly = true,
