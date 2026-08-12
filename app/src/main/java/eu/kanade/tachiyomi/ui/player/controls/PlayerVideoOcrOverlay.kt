@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import chimahon.DictionaryRepository
 import chimahon.MediaInfo
 import chimahon.ocr.OcrLanguage
+import chimahon.ocr.buildLookupSelection
 import eu.kanade.tachiyomi.data.ocr.recognizePage
 import eu.kanade.tachiyomi.ui.dictionary.DictionaryPopupWebViewWarmup
 import eu.kanade.tachiyomi.ui.dictionary.DictionaryPreferences
@@ -38,9 +39,8 @@ import eu.kanade.tachiyomi.ui.player.PlayerViewModel
 import eu.kanade.tachiyomi.ui.reader.viewer.OcrLineGeometry
 import eu.kanade.tachiyomi.ui.reader.viewer.OcrLookupPopup
 import eu.kanade.tachiyomi.ui.reader.viewer.OcrTextBlock
-import eu.kanade.tachiyomi.ui.reader.viewer.extractOcrLookupString
-import eu.kanade.tachiyomi.ui.reader.viewer.isLookupStartChar
 import eu.kanade.tachiyomi.ui.reader.viewer.orderedFullText
+import eu.kanade.tachiyomi.ui.reader.viewer.orderedLineBoundariesFor
 import eu.kanade.tachiyomi.ui.reader.viewer.toOrderedOffset
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -162,13 +162,22 @@ internal fun PlayerVideoOcrOverlay(
                 val charOffset = tapped.screenLookupCharOffset(tapX, tapY)
                 val orderedCharOffset = tapped.toOrderedOffset(charOffset)
                 val text = tapped.orderedFullText
-                if (selection?.block == tapped && selection?.sentenceOffset == orderedCharOffset) {
+                val (lineStart, lineEnd) = tapped.orderedLineBoundariesFor(orderedCharOffset)
+                val resolved = buildLookupSelection(
+                    text = text,
+                    tapOffset = orderedCharOffset,
+                    resolution = activeProfile.scanResolution,
+                    languageCode = activeProfile.languageCode.ifBlank { tapped.language },
+                    lineStart = lineStart,
+                    lineEnd = lineEnd,
+                )
+                if (resolved != null && selection?.block == tapped && selection?.sentenceOffset == resolved.start) {
                     selection = null
                     showTapHint = false
                     matchedCharCount = 0
                     matchOffset = 0
-                } else if (orderedCharOffset in text.indices && isLookupStartChar(text[orderedCharOffset])) {
-                    val lookupString = extractOcrLookupString(text, orderedCharOffset)
+                } else if (resolved != null) {
+                    val lookupString = resolved.query
                     if (lookupString.isNotBlank()) {
                         lookupNonce++
                         showTapHint = false
@@ -178,7 +187,7 @@ internal fun PlayerVideoOcrOverlay(
                             block = tapped,
                             lookupString = lookupString,
                             sentence = text,
-                            sentenceOffset = orderedCharOffset,
+                            sentenceOffset = resolved.start,
                             anchorX = tapped.xmin * widthPx,
                             anchorY = tapped.ymin * heightPx,
                             anchorWidth = (tapped.xmax - tapped.xmin) * widthPx,

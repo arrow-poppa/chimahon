@@ -1,0 +1,57 @@
+name: Build ARM64 APK
+
+on:
+  push:
+    branches:
+      - agent/byok-ai-arm64
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-arm64-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build arm64-v8a preview
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Checkout submodules
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule update --init --recursive
+
+      - name: Set up JDK
+        uses: actions/setup-java@1bcf9fb12cf4aa7d266a90ae39939e61372fe520 # v5.4.0
+        with:
+          java-version-file: .github/.java-version
+          distribution: temurin
+
+      - name: Validate Gradle Wrapper
+        uses: gradle/actions/wrapper-validation@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
+
+      - name: Run focused unit tests
+        run: ./gradlew :chimahon:testDebugUnitTest --no-daemon
+
+      - name: Build ARM64 APK
+        run: ./gradlew :app:assemblePreview -PtargetAbis=arm64-v8a --no-daemon
+
+      - name: Upload ARM64 APK
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: chimahon-arm64-v8a-${{ github.sha }}
+          path: app/build/outputs/apk/preview/*arm64-v8a*.apk
+          if-no-files-found: error
+          retention-days: 7

@@ -36,6 +36,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import chimahon.DictionaryRepository
 import chimahon.ocr.OcrLanguage
 import chimahon.ocr.OcrResult
+import chimahon.ocr.shouldScanWholeWord
 import com.canopus.chimareader.ui.reader.NovelReaderActivity
 import eu.kanade.tachiyomi.data.ocr.recognizePage
 import eu.kanade.tachiyomi.ui.dictionary.DictionaryPopupWebViewWarmup
@@ -78,6 +79,14 @@ class ChimaReaderActivity : NovelReaderActivity() {
         ).also { cachedActiveProfile = it }
         val paths = cachedTermPaths ?: getDictionaryPaths(this, profile).also { cachedTermPaths = it }
         return profile to paths
+    }
+
+    override fun scanWholeWordForLookup(): Boolean {
+        val profile = getOrRefreshLookupPaths().first
+        return shouldScanWholeWord(
+            profile.scanResolution,
+            profile.languageCode.ifBlank { bookMetadata?.lang.orEmpty() },
+        )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -315,8 +324,19 @@ class ChimaReaderActivity : NovelReaderActivity() {
     private var lookupStartTime: Long = 0L
 
     /** Called by [NovelReaderActivity] whenever the user selects text in the WebView. */
-    override fun onLookupRequested(word: String, sentence: String, x: Float, y: Float, w: Float, h: Float) {
-        startLookup(word, sentence, x, y, w, h, isVerticalWriting, screenshot = null, resolveAnchorFromWebView = true)
+    override fun onLookupRequested(word: String, sentence: String, sentenceOffset: Int, x: Float, y: Float, w: Float, h: Float) {
+        startLookup(
+            word,
+            sentence,
+            x,
+            y,
+            w,
+            h,
+            isVerticalWriting,
+            screenshot = null,
+            resolveAnchorFromWebView = true,
+            sentenceOffset = sentenceOffset,
+        )
     }
 
     override suspend fun recognizeImage(bitmap: Bitmap, language: OcrLanguage): List<OcrResult> {

@@ -17,6 +17,21 @@ class OcrLookupTextTest {
     }
 
     @ParameterizedTest
+    @MethodSource("lookupSelectionCases")
+    fun `buildLookupSelection returns query and source range`(testCase: LookupSelectionCase) {
+        Assertions.assertEquals(
+            testCase.expected,
+            buildLookupSelection(
+                text = testCase.text,
+                tapOffset = testCase.tapOffset,
+                wholeWord = testCase.wholeWord,
+                lineStart = testCase.lineStart,
+                lineEnd = testCase.lineEnd,
+            ),
+        )
+    }
+
+    @ParameterizedTest
     @MethodSource("wholeWordScanCases")
     fun `shouldScanWholeWord respects resolution and language`(testCase: WholeWordScanCase) {
         Assertions.assertEquals(
@@ -50,6 +65,15 @@ class OcrLookupTextTest {
     )
 
     data class WholeWordScanCase(val resolution: String, val language: String?, val expected: Boolean)
+
+    data class LookupSelectionCase(
+        val text: String,
+        val tapOffset: Int,
+        val wholeWord: Boolean,
+        val lineStart: Int,
+        val lineEnd: Int,
+        val expected: LookupSelection?,
+    )
 
     data class WordBoundaryCase(val current: String, val expected: String)
 
@@ -105,6 +129,58 @@ class OcrLookupTextTest {
             // Case-insensitive
             WholeWordScanCase("Word", "es", true),
             WholeWordScanCase("CHARACTER", "ja", false),
+        )
+
+        @JvmStatic
+        fun lookupSelectionCases() = listOf(
+            LookupSelectionCase(
+                text = "uma palavra inteira",
+                tapOffset = 8,
+                wholeWord = true,
+                lineStart = 0,
+                lineEnd = 19,
+                expected = LookupSelection("palavra", 4, 11, 8),
+            ),
+            LookupSelectionCase(
+                text = "uma palavra inteira",
+                tapOffset = 8,
+                wholeWord = false,
+                lineStart = 0,
+                lineEnd = 19,
+                expected = LookupSelection("vra", 8, 11, 8),
+            ),
+            LookupSelectionCase(
+                text = "l'esprit d'aujourd'hui",
+                tapOffset = 3,
+                wholeWord = true,
+                lineStart = 0,
+                lineEnd = 20,
+                expected = LookupSelection("l'esprit", 0, 8, 3),
+            ),
+            LookupSelectionCase(
+                text = "bem-estar geral",
+                tapOffset = 5,
+                wholeWord = true,
+                lineStart = 0,
+                lineEnd = 15,
+                expected = LookupSelection("bem-estar", 0, 9, 5),
+            ),
+            LookupSelectionCase(
+                text = "linhaumlinhadois",
+                tapOffset = 11,
+                wholeWord = true,
+                lineStart = 7,
+                lineEnd = 16,
+                expected = LookupSelection("linhadois", 7, 16, 11),
+            ),
+            LookupSelectionCase(
+                text = "texto, outro",
+                tapOffset = 5,
+                wholeWord = true,
+                lineStart = 0,
+                lineEnd = 12,
+                expected = null,
+            ),
         )
 
         @JvmStatic

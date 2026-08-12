@@ -1,8 +1,9 @@
 package eu.kanade.tachiyomi.ui.reader.viewer
 
 import chimahon.ocr.extractOcrLookupText
-import chimahon.ocr.extractWholeWord
 import chimahon.ocr.isOcrLookupStartChar
+import chimahon.ocr.LookupSelection
+import chimahon.ocr.buildLookupSelection
 
 /**
  * Represents an OCR-detected text block (normalized coordinates, pre-processed offline).
@@ -160,9 +161,19 @@ internal fun extractOcrLookupString(text: String, start: Int): String {
  * without a separator).
  */
 internal fun OcrTextBlock.extractLookupString(global: Int, wholeWord: Boolean): String {
-    if (!wholeWord) return extractOcrLookupText(fullText, global)
+    return lookupSelection(global, wholeWord)?.query.orEmpty()
+}
+
+/** Lookup selection in the block's raw [fullText] coordinate space. */
+internal fun OcrTextBlock.lookupSelection(global: Int, wholeWord: Boolean): LookupSelection? {
     val (lineStart, lineEnd) = lineBoundariesFor(global)
-    return extractWholeWord(fullText, global, lineStart, lineEnd)
+    return buildLookupSelection(
+        text = fullText,
+        tapOffset = global,
+        wholeWord = wholeWord,
+        lineStart = lineStart,
+        lineEnd = lineEnd,
+    )
 }
 
 /** [start, end) range of the line containing [offset] within [fullText]. */
@@ -175,6 +186,18 @@ internal fun OcrTextBlock.lineBoundariesFor(offset: Int): Pair<Int, Int> {
         lineStart = lineEnd
     }
     return lineStart to fullText.length
+}
+
+/** [start, end) range in [orderedFullText] for the line containing [offset]. */
+internal fun OcrTextBlock.orderedLineBoundariesFor(offset: Int): Pair<Int, Int> {
+    if (lines.isEmpty()) return 0 to 0
+    var lineStart = 0
+    for (lineIndex in orderedLineIndices()) {
+        val lineEnd = lineStart + lines[lineIndex].length
+        if (offset < lineEnd) return lineStart to lineEnd
+        lineStart = lineEnd
+    }
+    return lineStart to orderedFullText.length
 }
 
 internal fun uniformCharOffset(

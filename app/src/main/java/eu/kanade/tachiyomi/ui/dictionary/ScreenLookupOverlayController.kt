@@ -45,13 +45,12 @@ import chimahon.DictionaryRepository
 import chimahon.MediaInfo
 import chimahon.ocr.CropPresets
 import chimahon.ocr.OcrLanguage
+import chimahon.ocr.buildLookupSelection
 import eu.kanade.tachiyomi.data.ocr.recognizePage
 import eu.kanade.tachiyomi.ui.reader.viewer.OcrLookupPopup
 import eu.kanade.tachiyomi.ui.reader.viewer.OcrTextBlock
-import eu.kanade.tachiyomi.ui.reader.viewer.displayText
-import eu.kanade.tachiyomi.ui.reader.viewer.extractOcrLookupString
 import eu.kanade.tachiyomi.ui.reader.viewer.fullText
-import eu.kanade.tachiyomi.ui.reader.viewer.isLookupStartChar
+import eu.kanade.tachiyomi.ui.reader.viewer.lineBoundariesFor
 import eu.kanade.tachiyomi.util.system.toast
 import eu.kanade.tachiyomi.util.view.setComposeContent
 import kotlinx.coroutines.Dispatchers
@@ -333,13 +332,22 @@ internal fun ScreenLookupOverlay(
             onBlockTapped = { tapped, tapX, tapY ->
                 val charOffset = tapped.screenLookupCharOffset(tapX, tapY)
                 val text = tapped.fullText
-                if (selection?.block == tapped && selection?.sentenceOffset == charOffset) {
+                val (lineStart, lineEnd) = tapped.lineBoundariesFor(charOffset)
+                val resolved = buildLookupSelection(
+                    text = text,
+                    tapOffset = charOffset,
+                    resolution = activeProfile.scanResolution,
+                    languageCode = activeProfile.languageCode.ifBlank { tapped.language },
+                    lineStart = lineStart,
+                    lineEnd = lineEnd,
+                )
+                if (resolved != null && selection?.block == tapped && selection?.sentenceOffset == resolved.start) {
                     selection = null
                     showTapHint = false
                     matchedCharCount = 0
                     matchOffset = 0
-                } else if (charOffset in text.indices && isLookupStartChar(text[charOffset])) {
-                    val lookupString = extractOcrLookupString(text, charOffset)
+                } else if (resolved != null) {
+                    val lookupString = resolved.query
                     if (lookupString.isNotBlank()) {
                         lookupNonce++
                         showTapHint = false
@@ -348,8 +356,8 @@ internal fun ScreenLookupOverlay(
                         selection = OcrSelection(
                             block = tapped,
                             lookupString = lookupString,
-                            sentence = tapped.displayText,
-                            sentenceOffset = charOffset,
+                            sentence = text,
+                            sentenceOffset = resolved.start,
                             anchorX = tapped.xmin * widthPx,
                             anchorY = tapped.ymin * heightPx,
                             anchorWidth = (tapped.xmax - tapped.xmin) * widthPx,

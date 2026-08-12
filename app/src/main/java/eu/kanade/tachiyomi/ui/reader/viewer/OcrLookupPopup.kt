@@ -69,6 +69,7 @@ import chimahon.ocr.nextWordBoundarySubstring
 import chimahon.util.ImageEncoder
 import eu.kanade.tachiyomi.ui.dictionary.buildKanjiEntryJson
 import eu.kanade.tachiyomi.ui.dictionary.DictionaryEntryWebView
+import eu.kanade.tachiyomi.ui.dictionary.AiExplanationCard
 import eu.kanade.tachiyomi.ui.dictionary.DictionaryPreferences
 import eu.kanade.tachiyomi.ui.dictionary.getDictionaryColorScheme
 import eu.kanade.tachiyomi.ui.dictionary.TabInfo
@@ -1180,6 +1181,15 @@ fun OcrLookupPopup(
                 RecursiveLookupChrome()
                 if (recursiveNavMode == "popup" && dismissOnOutsideTap) {
                     PopupCloseChrome()
+                }
+                currentFrame?.let { frame ->
+                    AiExplanationCard(
+                        profile = activeProfile,
+                        target = frame.query,
+                        sentence = frame.sentence,
+                        hasDictionaryResults = frame.results.isNotEmpty(),
+                        active = visible,
+                    )
                 }
                 Box(
                     modifier = Modifier

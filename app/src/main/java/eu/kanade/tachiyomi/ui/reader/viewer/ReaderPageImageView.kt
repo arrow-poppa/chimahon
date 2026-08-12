@@ -130,6 +130,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
     internal var activeOcrBlock: OcrTextBlock? = null
     val hasActiveOcrBlock: Boolean get() = activeOcrBlock != null
     internal var activeOcrCharOffset: Int = 0
+    internal var activeOcrTapOffset: Int = 0
     internal var activeOcrMatchedCount: Int = 0
     internal var ocrLayoutCache: Pair<OcrTextBlock, StaticLayout>? = null
     internal var ocrPopupLookupString: String? = null
@@ -625,6 +626,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
         ocrBlocks = emptyList()
         activeOcrBlock = null
         activeOcrCharOffset = 0
+        activeOcrTapOffset = 0
         activeOcrMatchedCount = 0
         ocrLayoutCache = null
         ocrPopupLookupString = null
@@ -658,6 +660,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
             logcat { "OCR dismiss active block on pan/zoom" }
             activeOcrBlock = null
             activeOcrCharOffset = 0
+            activeOcrTapOffset = 0
             activeOcrMatchedCount = 0
             ocrLayoutCache = null
             onDismissOcrPopup?.invoke()
@@ -721,6 +724,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
 
         activeOcrBlock = block
         activeOcrCharOffset = 0
+        activeOcrTapOffset = 0
         activeOcrMatchedCount = 0
         ocrLayoutCache = null
         ocrPopupLookupString = null
@@ -760,6 +764,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
             }
             activeOcrBlock = block
             activeOcrCharOffset = 0
+            activeOcrTapOffset = 0
             activeOcrMatchedCount = 0
             ocrLayoutCache = null
             ocrPopupLookupString = null
@@ -770,25 +775,26 @@ open class ReaderPageImageView @JvmOverloads constructor(
         val ssiv = pageView as? SubsamplingScaleImageView ?: return true
         val charOffset = getCharOffset(block, viewX, viewY, ssiv) ?: 0
         
-        if (wasActive == block && activeOcrCharOffset == charOffset) {
+        if (wasActive == block && activeOcrTapOffset == charOffset) {
             logcat { "OCR tap: same character tapped, dismissing popup" }
             dismissActiveOcrBlock()
             onDismissOcrPopup?.invoke()
             return true // Consume the tap so it doesn't trigger pagination/HUD
         }
         
-        activeOcrCharOffset = charOffset
-        activeOcrMatchedCount = 0 // Reset until dictionary matches
         if (charOffset !in block.fullText.indices) {
             logcat(LogPriority.WARN) { "OCR char offset out of bounds: offset=$charOffset len=${block.fullText.length}" }
             return true
         }
-        val tappedChar = block.fullText[charOffset]
-        if (!isLookupStartChar(tappedChar)) {
-            logcat { "OCR tap ignored on punctuation/non-word char '$tappedChar' at offset=$charOffset" }
+        val selection = block.lookupSelection(charOffset, ocrWholeWordScan(block))
+        if (selection == null) {
+            logcat { "OCR tap ignored on punctuation/non-word char at offset=$charOffset" }
             return true
         }
-        val lookupString = block.extractLookupString(charOffset, ocrWholeWordScan(block))
+        activeOcrTapOffset = charOffset
+        activeOcrCharOffset = selection.start
+        activeOcrMatchedCount = 0 // Reset until dictionary matches
+        val lookupString = selection.query
         logcat {
             "OCR tap: lookup offset=$charOffset remainingChars=${lookupString.length} x=$viewX y=$viewY"
         }
@@ -796,8 +802,8 @@ open class ReaderPageImageView @JvmOverloads constructor(
             logcat(LogPriority.WARN) { "OCR lookup string is blank" }
             return true
         }
-        val sentenceText = block.orderedDisplayText
-        val sentenceOffset = block.toOrderedOffset(charOffset)
+        val sentenceText = block.orderedFullText
+        val sentenceOffset = block.toOrderedOffset(selection.start)
 
         ocrPopupLookupString = lookupString
 

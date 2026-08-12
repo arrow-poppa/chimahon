@@ -5,6 +5,7 @@ window.hoshiReader = {
     pageWidth: 0,
     nativeSelectionActive: false,
     nativeSelectionScrollPosition: null,
+    scanWholeWord: false,
     // Character counting regex: keeps alphanumeric and CJK scripts (Japanese, Chinese, Korean).
     // Added \p{Script=Hangul} to support Korean and clarified the CJK ideograph property.
     ttuRegexNegated: /[^0-9A-Za-z○◯々-〇〻ぁ-ゖゝ-ゞァ-ヺー０-９Ａ-Ｚａ-ｚｦ-ﾝ\p{Radical}\p{Unified_Ideograph}\p{Script=Hangul}]+/gimu,
@@ -491,6 +492,18 @@ window.hoshiReader = {
         return /^[\s\u3000]$/.test(char) || this.scanDelimiters.includes(char);
     },
 
+    isWordCharAt: function(text, index) {
+        if (index < 0 || index >= text.length) return false;
+        const char = text[index];
+        if (/^[\p{L}\p{N}\p{M}]$/u.test(char)) return true;
+        if (!(char === "'" || char === '\u2019' || char === '-' || char === '\u2010' || char === '\u2011')) {
+            return false;
+        }
+        return index > 0 && index + 1 < text.length &&
+            /^[\p{L}\p{N}\p{M}]$/u.test(text[index - 1]) &&
+            /^[\p{L}\p{N}\p{M}]$/u.test(text[index + 1]);
+    },
+
     isFurigana: function(node) {
         const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
         return !!el?.closest('rt, rp');
@@ -594,6 +607,25 @@ window.hoshiReader = {
         }
 
         return (partsBefore.reverse().join('') + partsAfter.join('')).trim();
+    },
+
+    getSentenceContext: function(text, selectedOffset) {
+        const trailingSentenceChars = '」』）】!?！？…';
+        let start = selectedOffset;
+        while (start > 0 && !this.sentenceDelimiters.includes(text[start - 1])) start--;
+
+        let end = selectedOffset;
+        while (end < text.length && !this.sentenceDelimiters.includes(text[end])) end++;
+        if (end < text.length) {
+            end++;
+            while (end < text.length && trailingSentenceChars.includes(text[end])) end++;
+        }
+
+        const rawSentence = text.slice(start, end);
+        const leadingWhitespace = (rawSentence.match(/^\s*/) || [''])[0].length;
+        const sentence = rawSentence.trim();
+        const offset = Math.max(0, Math.min(sentence.length, selectedOffset - start - leadingWhitespace));
+        return { sentence: sentence, offset: offset };
     },
 
     findImageElement: function(el) {
@@ -707,39 +739,47 @@ window.hoshiReader = {
 
         const container = this.findParagraph(hit.node) || document.body;
         const walker = this.createWalker(container);
+        const textNodes = [];
+        let node;
+        while ((node = walker.nextNode())) textNodes.push(node);
+        const hitNodeIndex = textNodes.indexOf(hit.node);
+        if (hitNodeIndex < 0) return false;
 
-        let word = '';
-        let node = hit.node;
-        let offset = hit.offset;
-        let ranges = [];
-        let reachedSentenceBreak = false;
+        let hitGlobalOffset = hit.offset;
+        for (let i = 0; i < hitNodeIndex; i++) hitGlobalOffset += textNodes[i].textContent.length;
+        const flatText = textNodes.map(n => n.textContent).join('');
+        let selectionStart = hitGlobalOffset;
+        let selectionEnd = hitGlobalOffset;
 
-        walker.currentNode = node;
-        while (!reachedSentenceBreak && node) {
-            const content = node.textContent;
-            let start = offset;
-            while (offset < content.length) {
-                const char = content[offset];
-                if (this.sentenceDelimiters.includes(char)) {
-                    reachedSentenceBreak = true;
-                    break;
-                }
-                word += char;
-                offset++;
+        if (this.scanWholeWord) {
+            if (!this.isWordCharAt(flatText, hitGlobalOffset)) return false;
+            while (selectionStart > 0 && this.isWordCharAt(flatText, selectionStart - 1)) selectionStart--;
+            selectionEnd = hitGlobalOffset + 1;
+            while (selectionEnd < flatText.length && this.isWordCharAt(flatText, selectionEnd)) selectionEnd++;
+        } else {
+            while (selectionEnd < flatText.length && !this.sentenceDelimiters.includes(flatText[selectionEnd])) {
+                selectionEnd++;
             }
-            if (offset > start) ranges.push({ node: node, start: start, end: offset });
-            if (reachedSentenceBreak || offset < content.length) break;
-            node = walker.nextNode();
-            offset = 0;
         }
-        word = word.trim();
+
+        let word = flatText.slice(selectionStart, selectionEnd).trim();
+        let ranges = [];
+        let nodeStart = 0;
+        for (const textNode of textNodes) {
+            const nodeEnd = nodeStart + textNode.textContent.length;
+            const start = Math.max(selectionStart, nodeStart) - nodeStart;
+            const end = Math.min(selectionEnd, nodeEnd) - nodeStart;
+            if (end > start) ranges.push({ node: textNode, start: start, end: end });
+            nodeStart = nodeEnd;
+            if (nodeStart >= selectionEnd) break;
+        }
 
         if (word.length > 0) {
             this.clearSelection();
             this.selectionStartNode = hit.node;
             this.selectionStartOffset = hit.offset;
             this.selectionRanges = ranges;
-            const sentence = this.getSentence(hit.node, hit.offset);
+            const sentenceContext = this.getSentenceContext(flatText, selectionStart);
 
             // Use Hoshi's approach: calculate bounding box based ONLY on the first character
             // This prevents the popup from jumping far away when a long phrase is selected.
@@ -761,7 +801,15 @@ window.hoshiReader = {
             }
 
             if (window.ReaderAndroid && window.ReaderAndroid.onTextSelected) {
-                window.ReaderAndroid.onTextSelected(word, sentence, minX, minY, maxX - minX, maxY - minY);
+                window.ReaderAndroid.onTextSelected(
+                    word,
+                    sentenceContext.sentence,
+                    sentenceContext.offset,
+                    minX,
+                    minY,
+                    maxX - minX,
+                    maxY - minY
+                );
                 return true;
             }
         }

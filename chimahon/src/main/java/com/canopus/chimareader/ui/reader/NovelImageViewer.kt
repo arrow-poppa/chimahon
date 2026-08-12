@@ -57,8 +57,7 @@ import chimahon.ocr.OcrHitTester
 import chimahon.ocr.OcrLanguage
 import chimahon.ocr.OcrResult
 import chimahon.ocr.OcrTextOverlayPainter
-import chimahon.ocr.extractOcrLookupText
-import chimahon.ocr.extractWholeWord
+import chimahon.ocr.buildLookupSelection
 import chimahon.ocr.isOcrLookupStartChar
 import chimahon.ocr.shouldScanWholeWord
 import coil3.asDrawable
@@ -603,21 +602,22 @@ private class NovelSubsamplingImageView(context: Context) : SubsamplingScaleImag
         if (hit.lineOffset !in target.line.text.indices ||
             !isOcrLookupStartChar(target.line.text[hit.lineOffset])
         ) return null
-        val lookupText = if (scanWholeWord) {
-            val line = target.line.text
-            extractWholeWord(line, hit.lineOffset, 0, line.length)
-        } else {
-            extractOcrLookupText(target.line.text, hit.lineOffset)
-        }
-        if (lookupText.isBlank()) return null
+        val line = target.line.text
+        val selection = buildLookupSelection(
+            text = line,
+            tapOffset = hit.lineOffset,
+            wholeWord = scanWholeWord,
+            lineStart = 0,
+            lineEnd = line.length,
+        ) ?: return null
         val rect = target.rect
         val location = IntArray(2)
         getLocationOnScreen(location)
 
         return NovelOcrLookup(
-            lookupText = lookupText,
+            lookupText = selection.query,
             sentence = target.block.displayText,
-            sentenceOffset = hit.textOffset,
+            sentenceOffset = hit.textOffset - hit.lineOffset + selection.start,
             x = rect.left + location[0],
             y = rect.top + location[1],
             width = rect.width(),
@@ -747,4 +747,3 @@ private fun saveImage(context: Context, bitmap: Bitmap) {
         MediaScannerConnection.scanFile(context, arrayOf(image.absolutePath), arrayOf("image/png"), null)
     }
 }
-

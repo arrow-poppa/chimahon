@@ -16,6 +16,15 @@ val enableUpdater = Config.enableUpdater
 val hasLocalOcr = file("../chimahon-local-ocr/build.gradle.kts").exists()
 val releaseVersionName = providers.gradleProperty("releaseVersionName").orNull
 val releaseVersionCode = providers.gradleProperty("releaseVersionCode").orNull?.toIntOrNull()
+val supportedAbis = listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+val requestedTargetAbis = providers.gradleProperty("targetAbis").orNull?.let { value ->
+    value.split(',').map { it.trim() }.filter { it.isNotEmpty() }.also { requested ->
+        require(requested.isNotEmpty() && requested.all { it in supportedAbis }) {
+            "targetAbis must contain one or more of: ${supportedAbis.joinToString()}"
+        }
+    }
+}
+val targetAbis = requestedTargetAbis ?: supportedAbis
 
 android {
     namespace = "eu.kanade.tachiyomi"
@@ -109,9 +118,9 @@ android {
     splits {
         abi {
             isEnable = true
-            isUniversalApk = true
+            isUniversalApk = requestedTargetAbis == null
             reset()
-            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            include(*targetAbis.toTypedArray())
         }
     }
 

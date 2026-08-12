@@ -58,6 +58,18 @@ data class AnkiProfile(
      * Empty means auto (derive from [languageCode]).
      */
     val searchResolution: String = "",
+
+    // Contextual AI explanation settings. API keys are deliberately stored
+    // separately by the Android host and never serialized with the profile.
+    val aiEnabled: Boolean = false,
+    val aiProvider: String = AI_PROVIDER_OPENAI,
+    val aiEndpoint: String = "",
+    val aiModel: String = "gpt-5-mini",
+    val aiSystemPrompt: String = DEFAULT_AI_SYSTEM_PROMPT,
+    val aiPrompt: String = DEFAULT_AI_PROMPT,
+    val aiTemperature: Float = 0.2f,
+    val aiAutoGenerate: Boolean = false,
+    val aiUnknownWordFallback: Boolean = false,
 ) {
 
     fun toJson(): JSONObject = JSONObject().apply {
@@ -81,6 +93,15 @@ data class AnkiProfile(
         put("languageCode", languageCode)
         put("scanResolution", scanResolution)
         put("searchResolution", searchResolution)
+        put("aiEnabled", aiEnabled)
+        put("aiProvider", aiProvider)
+        put("aiEndpoint", aiEndpoint)
+        put("aiModel", aiModel)
+        put("aiSystemPrompt", aiSystemPrompt)
+        put("aiPrompt", aiPrompt)
+        put("aiTemperature", aiTemperature.toDouble())
+        put("aiAutoGenerate", aiAutoGenerate)
+        put("aiUnknownWordFallback", aiUnknownWordFallback)
     }
 
     companion object {
@@ -101,6 +122,12 @@ data class AnkiProfile(
         const val SEARCH_RESOLUTION_AUTO = ""
         const val SEARCH_RESOLUTION_LETTER = "letter"
         const val SEARCH_RESOLUTION_WORD = "word"
+
+        const val AI_PROVIDER_OPENAI = "openai"
+        const val AI_PROVIDER_OPENAI_COMPATIBLE = "openai_compatible"
+        const val AI_PROVIDER_GEMINI = "gemini"
+        const val DEFAULT_AI_SYSTEM_PROMPT = "You are a concise language tutor. Explain the selected term using the supplied sentence context."
+        const val DEFAULT_AI_PROMPT = "Explain {{target}} in this context:\n{{sentence}}"
 
         fun fromJson(json: JSONObject): AnkiProfile = AnkiProfile(
             id = json.getString("id"),
@@ -144,6 +171,15 @@ data class AnkiProfile(
             languageCode = json.optString("languageCode", ""),
             scanResolution = json.optString("scanResolution", ""),
             searchResolution = json.optString("searchResolution", ""),
+            aiEnabled = json.optBoolean("aiEnabled", false),
+            aiProvider = json.optString("aiProvider", AI_PROVIDER_OPENAI),
+            aiEndpoint = json.optString("aiEndpoint", ""),
+            aiModel = json.optString("aiModel", "gpt-5-mini"),
+            aiSystemPrompt = json.optString("aiSystemPrompt", DEFAULT_AI_SYSTEM_PROMPT),
+            aiPrompt = json.optString("aiPrompt", DEFAULT_AI_PROMPT),
+            aiTemperature = json.optDouble("aiTemperature", 0.2).toFloat().coerceIn(0f, 2f),
+            aiAutoGenerate = json.optBoolean("aiAutoGenerate", false),
+            aiUnknownWordFallback = json.optBoolean("aiUnknownWordFallback", false),
         )
 
         /**

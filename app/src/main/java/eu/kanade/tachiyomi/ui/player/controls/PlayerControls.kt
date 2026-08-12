@@ -106,8 +106,9 @@ import eu.kanade.tachiyomi.ui.player.settings.AudioPreferences
 import eu.kanade.tachiyomi.ui.player.settings.GesturePreferences
 import eu.kanade.tachiyomi.ui.player.settings.PlayerPreferences
 import eu.kanade.tachiyomi.ui.player.settings.SubtitlePreferences
-import eu.kanade.tachiyomi.ui.reader.viewer.extractOcrLookupString
 import eu.kanade.tachiyomi.ui.reader.viewer.isLookupStartChar
+import eu.kanade.tachiyomi.ui.dictionary.DictionaryPreferences
+import chimahon.ocr.buildLookupSelection
 import eu.kanade.tachiyomi.util.system.toast
 import `is`.xyz.mpv.MPVLib
 import kotlinx.collections.immutable.toImmutableList
@@ -139,6 +140,7 @@ fun PlayerControls(
     val gesturePreferences = remember { Injekt.get<GesturePreferences>() }
     val audioPreferences = remember { Injekt.get<AudioPreferences>() }
     val subtitlePreferences = remember { Injekt.get<SubtitlePreferences>() }
+    val dictionaryPreferences = remember { Injekt.get<DictionaryPreferences>() }
     val interactionSource = remember { MutableInteractionSource() }
     val controlsShown by viewModel.controlsShown.collectAsState()
     val areControlsLocked by viewModel.areControlsLocked.collectAsState()
@@ -161,6 +163,15 @@ fun PlayerControls(
     val activeSubtitleCueIndex by viewModel.activeSubtitleCueIndex.collectAsState()
     val primarySubtitleDelaySeconds by viewModel.primarySubtitleDelaySeconds.collectAsState()
     val panel by viewModel.panelShown.collectAsState()
+    val lookupAnime by viewModel.currentAnime.collectAsState()
+    val lookupSource by viewModel.currentSource.collectAsState()
+    val subtitleLookupProfile = remember(lookupAnime?.id, lookupSource?.id, lookupSource?.lang) {
+        dictionaryPreferences.profileResolver.resolve(
+            animeId = lookupAnime?.id ?: 0L,
+            sourceId = lookupSource?.id ?: 0L,
+            sourceLang = lookupSource?.lang.orEmpty(),
+        )
+    }
     val activeSubtitleCue = remember(subtitleCues, activeSubtitleCueIndex) {
         subtitleCues.firstOrNull { it.index == activeSubtitleCueIndex }
     }
@@ -259,6 +270,8 @@ fun PlayerControls(
             subtitleDelaySeconds = primarySubtitleDelaySeconds,
             request = subtitleLookupRequest,
             onLookup = openSubtitleLookup,
+            scanResolution = subtitleLookupProfile.scanResolution,
+            languageCode = subtitleLookupProfile.languageCode.ifBlank { lookupSource?.lang.orEmpty() },
         )
         PlayerSubtitleTextLayer(
             text = if (subtitlesVisible) secondaryCurrentSubtitleText else "",
@@ -854,6 +867,8 @@ private fun PlayerSubtitleTextLayer(
     subtitleDelaySeconds: Double = 0.0,
     request: SubtitleLookupRequest? = null,
     onLookup: (SubtitleLookupSelection) -> Unit = {},
+    scanResolution: String = "",
+    languageCode: String = "",
     modifier: Modifier = Modifier,
     topAligned: Boolean = false,
     bottomPadding: Dp? = null,
@@ -973,13 +988,27 @@ private fun PlayerSubtitleTextLayer(
                     detectTapGestures(
                         onTap = { position ->
                             val layout = textLayout ?: return@detectTapGestures
-                            layout.subtitleLookupSelectionForTap(subtitleText, position, cue, subtitleDelaySeconds)
+                            layout.subtitleLookupSelectionForTap(
+                                subtitleText,
+                                position,
+                                cue,
+                                subtitleDelaySeconds,
+                                scanResolution,
+                                languageCode,
+                            )
                                 ?.offsetBy(textLayerOrigin)
                                 ?.let(onLookup)
                         },
                         onLongPress = { position ->
                             val layout = textLayout ?: return@detectTapGestures
-                            layout.subtitleLookupSelectionForTap(subtitleText, position, cue, subtitleDelaySeconds)
+                            layout.subtitleLookupSelectionForTap(
+                                subtitleText,
+                                position,
+                                cue,
+                                subtitleDelaySeconds,
+                                scanResolution,
+                                languageCode,
+                            )
                                 ?.offsetBy(textLayerOrigin)
                                 ?.let(onLookup)
                         },
@@ -1033,23 +1062,33 @@ private fun TextLayoutResult.subtitleLookupSelectionForTap(
     position: Offset,
     cue: PlayerViewModel.SubtitleCue?,
     subtitleDelaySeconds: Double,
+    scanResolution: String,
+    languageCode: String,
 ): SubtitleLookupSelection? {
     if (text.isBlank()) return null
     val offset = lookupOffsetForPosition(text, position) ?: return null
     if (offset !in text.indices || !isLookupStartChar(text[offset])) return null
-    val lookupString = extractOcrLookupString(text, offset).take(80).trim()
-    if (lookupString.isBlank()) return null
-    val anchor = lookupAnchorRect(text, offset, lookupString) ?: return null
     val lineIndex = getLineForOffset(offset.coerceIn(0, text.lastIndex))
     val lineStart = getLineStart(lineIndex)
     val lineEnd = getLineEnd(lineIndex, visibleEnd = true).coerceAtLeast(lineStart)
+    val resolved = buildLookupSelection(
+        text = text,
+        tapOffset = offset,
+        resolution = scanResolution,
+        languageCode = languageCode,
+        lineStart = lineStart,
+        lineEnd = lineEnd,
+    ) ?: return null
+    val lookupString = resolved.query.take(80).trim()
+    if (lookupString.isBlank()) return null
+    val anchor = lookupAnchorRect(text, resolved.start, lookupString) ?: return null
     val lineText = text.substring(lineStart, lineEnd)
     val lineBounds = lineBounds(lineIndex)
 
     return SubtitleLookupSelection(
         lookupString = lookupString,
         fullText = text,
-        charOffset = offset,
+        charOffset = resolved.start,
         tapCharOffset = offset,
         lineText = lineText,
         lineIndex = lineIndex,

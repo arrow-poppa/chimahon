@@ -11,6 +11,7 @@ import eu.kanade.tachiyomi.core.security.PrivacyPreferences
 import eu.kanade.tachiyomi.core.security.SecurityPreferences
 import eu.kanade.tachiyomi.network.NetworkPreferences
 import eu.kanade.tachiyomi.ui.dictionary.DictionaryPreferences
+import eu.kanade.tachiyomi.ui.dictionary.AiSecretStore
 import eu.kanade.tachiyomi.torrentServer.TorrentServerPreferences
 import eu.kanade.tachiyomi.ui.player.settings.AdvancedPlayerPreferences
 import eu.kanade.tachiyomi.ui.player.settings.AudioPreferences
@@ -96,6 +97,9 @@ class PreferenceModule(val app: Application) : InjektModule {
         }
         addSingletonFactory {
             DictionaryPreferences(get())
+        }
+        addSingletonFactory {
+            AiSecretStore(get())
         }
         addSingletonFactory {
             NovelReaderSettings(app)

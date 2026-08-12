@@ -282,6 +282,12 @@ class AppModule(val app: Application) : InjektModule {
                 koreanParserMode = { dictionaryPreferences.koreanParserMode().get() },
             )
         }
+        addSingletonFactory {
+            eu.kanade.tachiyomi.ui.dictionary.AiExplanationRepository(
+                get<NetworkHelper>().client,
+                get(),
+            )
+        }
         addSingletonFactory { TtuOAuthManager(app) }
         addSingletonFactory { SyncSettingsRepository(app) }
         addSingletonFactory { TtuSyncManager(app, get(), get()) }

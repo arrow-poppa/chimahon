@@ -48,7 +48,8 @@ fun ReaderWebView(
     swipeThreshold: Int = 96,
     tapZonePx: Int = 100,
     isPopupActive: Boolean = false,
-    onTextSelected: (word: String, sentence: String, x: Float, y: Float, w: Float, h: Float) -> Unit = { _, _, _, _, _, _ -> },
+    scanWholeWord: Boolean = false,
+    onTextSelected: (word: String, sentence: String, sentenceOffset: Int, x: Float, y: Float, w: Float, h: Float) -> Unit = { _, _, _, _, _, _, _ -> },
     onSentenceReady: (sentence: String) -> Unit = {},
     onDismissPopupRequested: () -> Unit = {},
     onInternalLinkClicked: (url: String) -> Unit = {},
@@ -109,6 +110,7 @@ fun ReaderWebView(
                 onTapTop = { if (!isPopupActive) onTapTop() },
                 onTapBottom = { if (!isPopupActive) onTapBottom() },
                 isPopupActive = isPopupActive,
+                scanWholeWord = scanWholeWord,
                 onTextSelectedCallback = onTextSelected,
                 onSentenceReadyCallback = onSentenceReady,
                 onDismissPopupRequested = onDismissPopupRequested,
@@ -252,6 +254,13 @@ fun ReaderWebView(
             v.readerSettings = readerSettings
             v.focusMode = focusMode
             v.isPopupActive = isPopupActive
+            if (v.scanWholeWord != scanWholeWord) {
+                v.scanWholeWord = scanWholeWord
+                v.evaluateJavascript(
+                    "if(window.hoshiReader) { window.hoshiReader.scanWholeWord = ${if (scanWholeWord) "true" else "false"}; }",
+                    null,
+                )
+            }
             v.setSelectionRectsCallback(onSelectionRectsReceived)
             v.setBackgroundColor(readerSettings.backgroundColor)
 
@@ -351,6 +360,7 @@ private class ReaderAndroidWebView(
     var isImageOnly: Boolean = false,
     var readerSettings: ReaderSettings = ReaderSettings(),
     var focusMode: Boolean = false,
+    var scanWholeWord: Boolean = false,
     private val onNextChapter: () -> Boolean,
     private val onPreviousChapter: () -> Boolean,
     private val onProgressChanged: (Double) -> Unit,
@@ -361,7 +371,7 @@ private class ReaderAndroidWebView(
     private val swipeThreshold: Int = 96,
     private val tapZonePx: Int = 100,
     var isPopupActive: Boolean = false,
-    private val onTextSelectedCallback: (word: String, sentence: String, x: Float, y: Float, w: Float, h: Float) -> Unit = { _, _, _, _, _, _ -> },
+    private val onTextSelectedCallback: (word: String, sentence: String, sentenceOffset: Int, x: Float, y: Float, w: Float, h: Float) -> Unit = { _, _, _, _, _, _, _ -> },
     private val onSentenceReadyCallback: (sentence: String) -> Unit = {},
     private val onDismissPopupRequested: () -> Unit = {},
     internal val onInternalLinkClicked: (url: String) -> Unit = {},
@@ -468,12 +478,12 @@ private class ReaderAndroidWebView(
                 }
             }
         },
-        onTextSelectedCallback = { word, sentence, x, y, w, h ->
+        onTextSelectedCallback = { word, sentence, sentenceOffset, x, y, w, h ->
             post {
                 val density = context.resources.displayMetrics.density
                 val loc = IntArray(2)
                 getLocationOnScreen(loc)
-                onTextSelectedCallback(word, sentence, x * density + loc[0], y * density + loc[1], w * density, h * density)
+                onTextSelectedCallback(word, sentence, sentenceOffset, x * density + loc[0], y * density + loc[1], w * density, h * density)
             }
         },
         onBackgroundTap = { x, y ->
@@ -830,6 +840,7 @@ private class ReaderAndroidWebView(
                 document.head.appendChild(contImgStyle);
 
                 $readerJs
+                window.hoshiReader.scanWholeWord = ${if (scanWholeWord) "true" else "false"};
 
                 var b = document.body;
                 if (!b) { window.hoshiReader.notifyRestoreComplete(); return; }
@@ -1012,6 +1023,7 @@ private class ReaderAndroidWebView(
                 document.head.appendChild(blockImgStyle);
 
                 $readerJs
+                window.hoshiReader.scanWholeWord = ${if (scanWholeWord) "true" else "false"};
 
                 var b = document.body;
                 if (!b) { window.hoshiReader.notifyRestoreComplete(); return; }
@@ -1376,7 +1388,7 @@ private class ReaderAndroidWebView(
 
 private class ReaderJavascriptBridge(
     private val onRestoreCompleted: (Int) -> Unit,
-    private val onTextSelectedCallback: (word: String, sentence: String, x: Float, y: Float, w: Float, h: Float) -> Unit = { _, _, _, _, _, _ -> },
+    private val onTextSelectedCallback: (word: String, sentence: String, sentenceOffset: Int, x: Float, y: Float, w: Float, h: Float) -> Unit = { _, _, _, _, _, _, _ -> },
     private val onBackgroundTap: (x: Float, y: Float) -> Unit = { _, _ -> },
     private val onSentenceReadyCallback: (sentence: String) -> Unit = {},
     private val onImageTappedCallback: (imageUrl: String) -> Unit = {},
@@ -1390,8 +1402,8 @@ private class ReaderJavascriptBridge(
     }
 
     @JavascriptInterface
-    fun onTextSelected(word: String, sentence: String, x: Float, y: Float, w: Float, h: Float) {
-        if (word.isNotBlank()) onTextSelectedCallback.invoke(word, sentence, x, y, w, h)
+    fun onTextSelected(word: String, sentence: String, sentenceOffset: Int, x: Float, y: Float, w: Float, h: Float) {
+        if (word.isNotBlank()) onTextSelectedCallback.invoke(word, sentence, sentenceOffset, x, y, w, h)
     }
 
     @JavascriptInterface

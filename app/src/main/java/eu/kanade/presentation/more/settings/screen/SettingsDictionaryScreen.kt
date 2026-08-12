@@ -77,6 +77,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import chimahon.HoshiDicts
@@ -95,6 +97,8 @@ import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.ProgressListener
 import eu.kanade.tachiyomi.data.dictionary.DictionaryUpdateJob
 import eu.kanade.tachiyomi.ui.dictionary.DictionaryPreferences
+import eu.kanade.tachiyomi.ui.dictionary.AiExplanationRepository
+import eu.kanade.tachiyomi.ui.dictionary.AiSecretStore
 import eu.kanade.tachiyomi.ui.dictionary.getDictionaryTitle
 import eu.kanade.tachiyomi.ui.dictionary.invalidateDictionaryTitle
 import eu.kanade.tachiyomi.util.system.toast
@@ -510,9 +514,227 @@ object SettingsDictionaryScreen : SearchableSettings {
         // Dictionary tab: profiles + imported dicts + updates + word audio
         return listOf(
             getAnkiProfileGroup(),
+            getAiGroup(),
             getDictionaryListGroup(importLauncher),
             getDictionaryUpdatesGroup(),
             getWordAudioGroup(pickDb),
+        )
+    }
+
+    @Composable
+    private fun getAiGroup(): Preference.PreferenceGroup {
+        val dictionaryPreferences = remember { Injekt.get<DictionaryPreferences>() }
+        val secretStore = remember { Injekt.get<AiSecretStore>() }
+        val aiRepository = remember { Injekt.get<AiExplanationRepository>() }
+        val rawProfiles by dictionaryPreferences.rawProfiles().collectAsState()
+        val rawActiveProfileId by dictionaryPreferences.rawActiveProfileId().collectAsState()
+        val profileStore = dictionaryPreferences.profileStore
+        val activeProfile = remember(rawProfiles, rawActiveProfileId) { profileStore.getActiveProfile() }
+        val scope = rememberCoroutineScope()
+
+        return Preference.PreferenceGroup(
+            title = "AI explanation (BYOK)",
+            preferenceItems = persistentListOf(
+                Preference.PreferenceItem.CustomPreference(
+                    title = "AI explanation (BYOK)",
+                    content = {
+                        var providerExpanded by remember { mutableStateOf(false) }
+                        var showApiKey by remember { mutableStateOf(false) }
+                        var apiKey by remember(activeProfile.aiProvider) {
+                            mutableStateOf(secretStore.get(activeProfile.aiProvider))
+                        }
+                        var connectionState by remember(activeProfile.id, activeProfile.aiProvider) {
+                            mutableStateOf<String?>(null)
+                        }
+
+                        fun updateProfile(transform: (AnkiProfile) -> AnkiProfile) {
+                            profileStore.updateProfile(transform(profileStore.getActiveProfile()))
+                        }
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Text(
+                                text = "The selected term and sentence are sent directly to your chosen provider. Keys stay encrypted on this device and are excluded from app backups.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text("Enable contextual AI")
+                                Switch(
+                                    checked = activeProfile.aiEnabled,
+                                    onCheckedChange = { enabled -> updateProfile { it.copy(aiEnabled = enabled) } },
+                                )
+                            }
+
+                            ExposedDropdownMenuBox(
+                                expanded = providerExpanded,
+                                onExpandedChange = { providerExpanded = it },
+                            ) {
+                                val providerName = when (activeProfile.aiProvider) {
+                                    AnkiProfile.AI_PROVIDER_GEMINI -> "Gemini"
+                                    AnkiProfile.AI_PROVIDER_OPENAI_COMPATIBLE -> "OpenAI-compatible"
+                                    else -> "OpenAI (Responses API)"
+                                }
+                                OutlinedTextField(
+                                    value = providerName,
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    label = { Text("Provider") },
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(providerExpanded) },
+                                    modifier = Modifier.menuAnchor().fillMaxWidth(),
+                                )
+                                ExposedDropdownMenu(
+                                    expanded = providerExpanded,
+                                    onDismissRequest = { providerExpanded = false },
+                                ) {
+                                    listOf(
+                                        AnkiProfile.AI_PROVIDER_OPENAI to "OpenAI (Responses API)",
+                                        AnkiProfile.AI_PROVIDER_OPENAI_COMPATIBLE to "OpenAI-compatible",
+                                        AnkiProfile.AI_PROVIDER_GEMINI to "Gemini",
+                                    ).forEach { (provider, label) ->
+                                        DropdownMenuItem(
+                                            text = { Text(label) },
+                                            onClick = {
+                                                updateProfile { profile ->
+                                                    val nextModel = when {
+                                                        provider == AnkiProfile.AI_PROVIDER_GEMINI && profile.aiModel.startsWith("gpt-") -> "gemini-2.5-flash"
+                                                        provider != AnkiProfile.AI_PROVIDER_GEMINI && profile.aiModel.startsWith("gemini-") -> "gpt-5-mini"
+                                                        else -> profile.aiModel
+                                                    }
+                                                    profile.copy(aiProvider = provider, aiModel = nextModel)
+                                                }
+                                                providerExpanded = false
+                                                connectionState = null
+                                            },
+                                        )
+                                    }
+                                }
+                            }
+
+                            OutlinedTextField(
+                                value = apiKey,
+                                onValueChange = {
+                                    apiKey = it
+                                    secretStore.set(activeProfile.aiProvider, it)
+                                    connectionState = null
+                                },
+                                label = { Text("API key") },
+                                singleLine = true,
+                                visualTransformation = if (showApiKey) VisualTransformation.None else PasswordVisualTransformation(),
+                                trailingIcon = {
+                                    IconButton(onClick = { showApiKey = !showApiKey }) {
+                                        Icon(
+                                            imageVector = if (showApiKey) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                                            contentDescription = if (showApiKey) "Hide API key" else "Show API key",
+                                        )
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            OutlinedTextField(
+                                value = activeProfile.aiModel,
+                                onValueChange = { value -> updateProfile { it.copy(aiModel = value) } },
+                                label = { Text("Model") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            OutlinedTextField(
+                                value = activeProfile.aiEndpoint,
+                                onValueChange = { value -> updateProfile { it.copy(aiEndpoint = value) } },
+                                label = { Text("Custom endpoint (optional)") },
+                                supportingText = {
+                                    Text(
+                                        if (activeProfile.aiProvider == AnkiProfile.AI_PROVIDER_GEMINI) {
+                                            "Leave blank for Google; {{model}} is supported in custom URLs."
+                                        } else {
+                                            "Leave blank for the provider default. A URL ending in /v1 is completed automatically."
+                                        },
+                                    )
+                                },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            OutlinedTextField(
+                                value = activeProfile.aiSystemPrompt,
+                                onValueChange = { value -> updateProfile { it.copy(aiSystemPrompt = value) } },
+                                label = { Text("System prompt") },
+                                minLines = 2,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            OutlinedTextField(
+                                value = activeProfile.aiPrompt,
+                                onValueChange = { value -> updateProfile { it.copy(aiPrompt = value) } },
+                                label = { Text("Context prompt") },
+                                supportingText = { Text("Placeholders: {{target}} and {{sentence}}") },
+                                minLines = 3,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Text("Temperature: ${"%.1f".format(activeProfile.aiTemperature)}")
+                            Slider(
+                                value = activeProfile.aiTemperature,
+                                onValueChange = { value -> updateProfile { it.copy(aiTemperature = value) } },
+                                valueRange = 0f..2f,
+                                steps = 19,
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text("Generate automatically")
+                                Switch(
+                                    checked = activeProfile.aiAutoGenerate,
+                                    onCheckedChange = { value -> updateProfile { it.copy(aiAutoGenerate = value) } },
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text("Use AI when no dictionary entry exists")
+                                Switch(
+                                    checked = activeProfile.aiUnknownWordFallback,
+                                    onCheckedChange = { value -> updateProfile { it.copy(aiUnknownWordFallback = value) } },
+                                )
+                            }
+                            OutlinedButton(
+                                enabled = apiKey.isNotBlank() && connectionState != "Testing…",
+                                onClick = {
+                                    connectionState = "Testing…"
+                                    scope.launch {
+                                        connectionState = aiRepository.testConnection(profileStore.getActiveProfile())
+                                            .fold(
+                                                onSuccess = { "Connection successful" },
+                                                onFailure = { "Connection failed: ${it.message ?: "unknown error"}" },
+                                            )
+                                    }
+                                },
+                            ) {
+                                Text("Test connection")
+                            }
+                            connectionState?.let { state ->
+                                Text(
+                                    text = state,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (state.startsWith("Connection failed")) {
+                                        MaterialTheme.colorScheme.error
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                )
+                            }
+                        }
+                    },
+                ),
+            ),
         )
     }
 

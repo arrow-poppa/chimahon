@@ -123,7 +123,10 @@ open class NovelReaderActivity : ComponentActivity() {
     }
 
     /** Override in subclass to receive text selection events from the reader. */
-    protected open fun onLookupRequested(word: String, sentence: String, x: Float, y: Float, w: Float, h: Float) = Unit
+    protected open fun onLookupRequested(word: String, sentence: String, sentenceOffset: Int, x: Float, y: Float, w: Float, h: Float) = Unit
+
+    /** Whether EPUB taps should expand backward and forward to a whole word. */
+    protected open fun scanWholeWordForLookup(): Boolean = false
 
     /** Override in the app host so interactive OCR follows the configured engine. */
     protected open suspend fun recognizeImage(bitmap: Bitmap, language: OcrLanguage): List<OcrResult> = emptyList()
@@ -139,7 +142,7 @@ open class NovelReaderActivity : ComponentActivity() {
         h: Float,
         vertical: Boolean,
         bitmap: Bitmap,
-    ) = onLookupRequested(word, sentence, x, y, w, h)
+    ) = onLookupRequested(word, sentence, sentenceOffset, x, y, w, h)
 
     /** Override in subclass to receive the sentence context after onLookupRequested. */
     protected open fun onSentenceReady(sentence: String) = Unit
@@ -201,10 +204,13 @@ open class NovelReaderActivity : ComponentActivity() {
                         setSystemBarsVisibility(visible)
                     },
                     onThemeChanged = { bgColor -> updateSystemBarsTheme(bgColor) },
-                    onLookupRequested = { word, sentence, x, y, w, h -> onLookupRequested(word, sentence, x, y, w, h) },
+                    onLookupRequested = { word, sentence, sentenceOffset, x, y, w, h ->
+                        onLookupRequested(word, sentence, sentenceOffset, x, y, w, h)
+                    },
                     onSentenceReady = { sentence -> onSentenceReady(sentence) },
                     onDismissPopupRequested = { onDismissPopupRequested() },
                     isPopupActive = isPopupActive,
+                    scanWholeWord = scanWholeWordForLookup(),
                     onViewModelReady = { readerViewModel = it },
                     additionalSettings = { AdditionalAppearanceSettings() },
                     settingsNamespace = getSettingsNamespace(),

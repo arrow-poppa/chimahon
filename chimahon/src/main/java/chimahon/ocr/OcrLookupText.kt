@@ -2,6 +2,19 @@ package chimahon.ocr
 
 import chimahon.anki.AnkiProfile
 
+/**
+ * Text selected for a dictionary lookup.
+ *
+ * Offsets use Kotlin/Java UTF-16 indices so they can be passed directly to
+ * Compose text layouts and the EPUB WebView bridge.
+ */
+data class LookupSelection(
+    val query: String,
+    val start: Int,
+    val end: Int,
+    val tappedOffset: Int,
+)
+
 /** Returns whether [char] can begin a dictionary lookup. */
 fun isOcrLookupStartChar(char: Char): Boolean {
     if (char.isWhitespace()) return false
@@ -28,6 +41,90 @@ fun extractOcrLookupText(text: String, start: Int): String {
         index++
     }
     return result.toString()
+}
+
+private fun isInternalWordConnector(char: Char): Boolean {
+    return char == '\'' || char == '\u2019' || char == '-' || char == '\u2010' || char == '\u2011'
+}
+
+private fun isWholeWordCharAt(text: String, index: Int, lineStart: Int, lineEnd: Int): Boolean {
+    if (index !in lineStart until lineEnd) return false
+    if (isOcrLookupStartChar(text[index])) return true
+    if (!isInternalWordConnector(text[index])) return false
+    return index > lineStart &&
+        index + 1 < lineEnd &&
+        isOcrLookupStartChar(text[index - 1]) &&
+        isOcrLookupStartChar(text[index + 1])
+}
+
+/**
+ * Builds the lookup query and its source range for a tap.
+ *
+ * Character scanning deliberately keeps the existing Yomitan/hoshidicts
+ * behavior: the query begins at the tapped character and extends to the next
+ * delimiter so the backend can try successively shorter prefixes. Word
+ * scanning expands in both directions to the token containing the tap.
+ */
+fun buildLookupSelection(
+    text: String,
+    tapOffset: Int,
+    wholeWord: Boolean,
+    lineStart: Int = 0,
+    lineEnd: Int = text.length,
+): LookupSelection? {
+    if (text.isEmpty()) return null
+    val safeLineStart = lineStart.coerceIn(0, text.length)
+    val safeLineEnd = lineEnd.coerceIn(safeLineStart, text.length)
+    if (safeLineStart == safeLineEnd) return null
+    val tap = tapOffset.coerceIn(safeLineStart, safeLineEnd - 1)
+
+    if (!wholeWord) {
+        if (!isOcrLookupStartChar(text[tap])) return null
+        val query = extractOcrLookupText(text, tap)
+            .take((safeLineEnd - tap).coerceAtLeast(0))
+        if (query.isBlank()) return null
+        return LookupSelection(
+            query = query,
+            start = tap,
+            end = tap + query.length,
+            tappedOffset = tap,
+        )
+    }
+
+    if (!isWholeWordCharAt(text, tap, safeLineStart, safeLineEnd)) return null
+    var start = tap
+    while (start > safeLineStart && isWholeWordCharAt(text, start - 1, safeLineStart, safeLineEnd)) {
+        start--
+    }
+    var end = tap + 1
+    while (end < safeLineEnd && isWholeWordCharAt(text, end, safeLineStart, safeLineEnd)) {
+        end++
+    }
+    if (start >= end) return null
+    return LookupSelection(
+        query = text.substring(start, end),
+        start = start,
+        end = end,
+        tappedOffset = tap,
+    )
+}
+
+/** Resolves [resolution] and delegates to [buildLookupSelection]. */
+fun buildLookupSelection(
+    text: String,
+    tapOffset: Int,
+    resolution: String,
+    languageCode: String?,
+    lineStart: Int = 0,
+    lineEnd: Int = text.length,
+): LookupSelection? {
+    return buildLookupSelection(
+        text = text,
+        tapOffset = tapOffset,
+        wholeWord = shouldScanWholeWord(resolution, languageCode),
+        lineStart = lineStart,
+        lineEnd = lineEnd,
+    )
 }
 
 private val CJK_OcrLanguageCodes = setOf("ja", "zh", "yue", "ko")
@@ -125,15 +222,13 @@ fun isOcrAllowedForLanguage(sourceLanguage: String, profileLanguage: String): Bo
  * concatenates lines without separators).
  */
 fun extractWholeWord(text: String, tapOffset: Int, lineStart: Int, lineEnd: Int): String {
-    var start = tapOffset.coerceIn(lineStart, lineEnd)
-    while (start > lineStart && isOcrLookupStartChar(text[start - 1])) {
-        start--
-    }
-    var end = tapOffset.coerceIn(lineStart, lineEnd)
-    while (end < lineEnd && isOcrLookupStartChar(text[end])) {
-        end++
-    }
-    return text.substring(start, end)
+    return buildLookupSelection(
+        text = text,
+        tapOffset = tapOffset,
+        wholeWord = true,
+        lineStart = lineStart,
+        lineEnd = lineEnd,
+    )?.query.orEmpty()
 }
 
 private val wordBoundaryRegex = Regex("""[^\p{L}][\p{L}\p{N}]*$""")
