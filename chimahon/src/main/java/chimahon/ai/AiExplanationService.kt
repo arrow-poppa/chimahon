@@ -42,12 +42,15 @@ class AiExplanationService(httpClient: OkHttpClient) {
         }
 
         val prompt = renderPrompt(profile.aiPrompt, target, sentence)
+        val renderedProfile = profile.copy(
+            aiSystemPrompt = renderPrompt(profile.aiSystemPrompt, target, sentence),
+        )
         val request = when (profile.aiProvider) {
-            AnkiProfile.AI_PROVIDER_GEMINI -> buildGeminiRequest(profile, apiKey, prompt)
-            AnkiProfile.AI_PROVIDER_DEEPSEEK -> buildDeepSeekRequest(profile, apiKey, prompt)
+            AnkiProfile.AI_PROVIDER_GEMINI -> buildGeminiRequest(renderedProfile, apiKey, prompt)
+            AnkiProfile.AI_PROVIDER_DEEPSEEK -> buildDeepSeekRequest(renderedProfile, apiKey, prompt)
             AnkiProfile.AI_PROVIDER_CUSTOM,
-            AnkiProfile.AI_PROVIDER_OPENAI_COMPATIBLE -> buildCustomRequest(profile, apiKey, prompt)
-            else -> buildOpenAiResponsesRequest(profile, apiKey, prompt)
+            AnkiProfile.AI_PROVIDER_OPENAI_COMPATIBLE -> buildCustomRequest(renderedProfile, apiKey, prompt)
+            else -> buildOpenAiResponsesRequest(renderedProfile, apiKey, prompt)
         }
         val responseBody = client.newCall(request).awaitBody()
         return when (profile.aiProvider) {

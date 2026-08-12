@@ -184,8 +184,10 @@ data class AnkiProfile(
         const val ROUTING_ONLY = "only"
         const val ROUTING_IGNORE = "ignore"
 
-        const val DEFAULT_AI_SYSTEM_PROMPT = "You are a concise language tutor. Explain the selected term using the supplied sentence context."
-        const val DEFAULT_AI_PROMPT = "Explain {{target}} in this context:\n{{sentence}}"
+        const val DEFAULT_AI_SYSTEM_PROMPT = ""
+        const val DEFAULT_AI_PROMPT = "Explain the meaning of '{{target}}' in the following sentence: '{{sentence}}'. Provide a concise explanation focusing on the word's usage and meaning in this specific context."
+        private const val LEGACY_AI_SYSTEM_PROMPT = "You are a concise language tutor. Explain the selected term using the supplied sentence context."
+        private const val LEGACY_AI_PROMPT = "Explain {{target}} in this context:\n{{sentence}}"
 
         fun fromJson(json: JSONObject): AnkiProfile {
             val storedProvider = json.optString("aiProvider", AI_PROVIDER_OPENAI)
@@ -241,8 +243,12 @@ data class AnkiProfile(
             searchResolution = json.optString("searchResolution", ""),
             aiEnabled = json.optBoolean("aiEnabled", false),
             aiProvider = provider,
-            aiSystemPrompt = json.optString("aiSystemPrompt", DEFAULT_AI_SYSTEM_PROMPT),
-            aiPrompt = json.optString("aiPrompt", DEFAULT_AI_PROMPT),
+            aiSystemPrompt = json.optString("aiSystemPrompt", DEFAULT_AI_SYSTEM_PROMPT).let {
+                if (it == LEGACY_AI_SYSTEM_PROMPT) DEFAULT_AI_SYSTEM_PROMPT else it
+            },
+            aiPrompt = json.optString("aiPrompt", DEFAULT_AI_PROMPT).let {
+                if (it == LEGACY_AI_PROMPT) DEFAULT_AI_PROMPT else it
+            },
             aiTemperature = json.optDouble("aiTemperature", 0.2).toFloat().coerceIn(0f, 2f),
             aiAutoGenerate = json.optBoolean("aiAutoGenerate", false),
             aiUnknownWordFallback = json.optBoolean("aiUnknownWordFallback", false),

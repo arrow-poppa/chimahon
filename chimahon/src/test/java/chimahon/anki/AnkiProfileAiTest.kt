@@ -69,4 +69,21 @@ class AnkiProfileAiTest {
         assertEquals("provider/model", restored.aiCustomModel)
         assertEquals("https://openrouter.ai/api/v1/chat/completions", restored.aiCustomEndpoint)
     }
+
+    @Test
+    fun `first BYOK prompt defaults migrate to Yomitan defaults`() {
+        val restored = AnkiProfile.fromJson(
+            JSONObject()
+                .put("id", "legacy-prompts")
+                .put("name", "Legacy prompts")
+                .put(
+                    "aiSystemPrompt",
+                    "You are a concise language tutor. Explain the selected term using the supplied sentence context.",
+                )
+                .put("aiPrompt", "Explain {{target}} in this context:\n{{sentence}}"),
+        )
+
+        assertEquals(AnkiProfile.DEFAULT_AI_SYSTEM_PROMPT, restored.aiSystemPrompt)
+        assertEquals(AnkiProfile.DEFAULT_AI_PROMPT, restored.aiPrompt)
+    }
 }

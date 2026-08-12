@@ -22,11 +22,24 @@ class AiExplanationServiceTest {
     }
 
     @Test
+    fun `all placeholders are replaced for both user and system prompt templates`() {
+        assertEquals(
+            "Target escolher; again escolher; context Eu preciso escolher agora.",
+            AiExplanationService.renderPrompt(
+                "Target {{target}}; again {{target}}; context {{sentence}}",
+                "escolher",
+                "Eu preciso escolher agora.",
+            ),
+        )
+    }
+
+    @Test
     fun `openrouter custom settings are applied and request json overrides generated values`() {
         val profile = AnkiProfile(
             id = "test",
             name = "Test",
             aiProvider = AnkiProfile.AI_PROVIDER_CUSTOM,
+            aiSystemPrompt = "Tutor",
             aiCustomEndpoint = "https://openrouter.ai/api/v1/chat/completions",
             aiCustomModel = "provider/model",
             aiCustomProviderRoutingMode = AnkiProfile.ROUTING_ONLY,
@@ -45,6 +58,7 @@ class AiExplanationServiceTest {
 
         assertEquals("provider/model", body.getString("model"))
         assertEquals("system", messages.getJSONObject(0).getString("role"))
+        assertEquals("Tutor", messages.getJSONObject(0).getString("content"))
         assertEquals("user", messages.getJSONObject(1).getString("role"))
         assertEquals("Explain it", messages.getJSONObject(1).getString("content"))
         assertEquals(0.4, body.getDouble("temperature"))
@@ -53,6 +67,24 @@ class AiExplanationServiceTest {
         assertEquals("deepinfra/turbo", provider.getJSONArray("only").getString(0))
         assertEquals("fireworks", provider.getJSONArray("only").getString(1))
         assertFalse(provider.getBoolean("allow_fallbacks"))
+    }
+
+    @Test
+    fun `empty system prompt sends only the user message like Yomitan`() {
+        val profile = AnkiProfile(
+            id = "test",
+            name = "Test",
+            aiProvider = AnkiProfile.AI_PROVIDER_CUSTOM,
+            aiSystemPrompt = "",
+            aiCustomEndpoint = "https://example.test/v1/chat/completions",
+            aiCustomModel = "model",
+        )
+
+        val messages = AiExplanationService.buildCustomRequestBody(profile, "Explain it").getJSONArray("messages")
+
+        assertEquals(1, messages.length())
+        assertEquals("user", messages.getJSONObject(0).getString("role"))
+        assertEquals("Explain it", messages.getJSONObject(0).getString("content"))
     }
 
     @Test
