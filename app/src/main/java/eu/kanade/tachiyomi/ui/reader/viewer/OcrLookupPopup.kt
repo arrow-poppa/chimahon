@@ -1259,6 +1259,9 @@ fun OcrLookupPopup(
                     renderRecursiveChrome = false,
                     customCss = customCss,
                     wordAudioEnabled = wordAudioEnabled,
+                    // Touch scrolling is sufficient inside the compact popup;
+                    // floating arrows cover entry actions on narrow screens.
+                    showNavigationButtonsOverride = false,
                     // Suppress autoplay when the popup is hidden (warm shell still in
                     // composition). Without this the WebView fires audio on a new lookup
                     // result even while the popup is invisible to the user.

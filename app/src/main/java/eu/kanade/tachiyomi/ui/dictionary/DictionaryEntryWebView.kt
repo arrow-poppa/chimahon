@@ -51,6 +51,7 @@ fun DictionaryEntryWebView(
     renderRecursiveChrome: Boolean = true,
     wordAudioEnabled: Boolean = true,
     wordAudioAutoplayOverride: Boolean? = null,
+    showNavigationButtonsOverride: Boolean? = null,
     entryJsons: List<String>? = null,
     customCss: String = "",
     groupPitches: Boolean = false,
@@ -93,7 +94,8 @@ fun DictionaryEntryWebView(
     }
     val wordAudioAutoplay by prefs.wordAudioAutoplay().collectAsState()
     val effectiveWordAudioAutoplay = wordAudioAutoplayOverride ?: wordAudioAutoplay
-    val showNavigationButtons by prefs.showNavigationButtons().collectAsState()
+    val configuredShowNavigationButtons by prefs.showNavigationButtons().collectAsState()
+    val showNavigationButtons = showNavigationButtonsOverride ?: configuredShowNavigationButtons
     val eInkMode by prefs.eInkMode().collectAsState()
     val paginatedScrolling by prefs.paginatedScrolling().collectAsState()
     val paginatedScrollStepSize by prefs.paginatedScrollStepSize().collectAsState()
