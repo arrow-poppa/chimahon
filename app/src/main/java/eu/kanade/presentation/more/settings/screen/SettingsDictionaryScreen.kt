@@ -2415,8 +2415,8 @@ object SettingsDictionaryScreen : SearchableSettings {
         val profileStore = dictionaryPreferences.profileStore
         val activeProfile = remember(rawProfiles, rawActiveProfileId) { profileStore.getActiveProfile() }
 
-        val updateProfile: (chimahon.anki.AnkiProfile.() -> chimahon.anki.AnkiProfile) -> Unit = { transform ->
-            profileStore.updateProfile(profileStore.getActiveProfile().transform())
+        val updateProfile: ((AnkiProfile) -> AnkiProfile) -> Unit = { transform ->
+            profileStore.updateProfile(transform(profileStore.getActiveProfile()))
         }
 
         var pendingPermissionCheck by remember { mutableStateOf(false) }
@@ -2428,7 +2428,7 @@ object SettingsDictionaryScreen : SearchableSettings {
                 if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME && pendingPermissionCheck) {
                     pendingPermissionCheck = false
                     if (bridge.hasPermission()) {
-                        updateProfile { copy(ankiEnabled = true) }
+                        updateProfile { it.copy(ankiEnabled = true) }
                     } else {
                         context.toast(MR.strings.pref_anki_permission_denied)
                     }
@@ -2483,14 +2483,14 @@ object SettingsDictionaryScreen : SearchableSettings {
                 } else {
                     updated[normalizedName] = effectiveDisplayValue
                 }
-                updateProfile { copy(ankiFieldMap = org.json.JSONObject(updated).toString()) }
+                updateProfile { it.copy(ankiFieldMap = org.json.JSONObject(updated).toString()) }
             }
         }
 
         val removeCustomField: (String) -> Unit = { fieldName ->
             val updated = fieldMap.toMutableMap()
             updated.remove(fieldName)
-            updateProfile { copy(ankiFieldMap = org.json.JSONObject(updated).toString()) }
+            updateProfile { it.copy(ankiFieldMap = org.json.JSONObject(updated).toString()) }
         }
 
         // Check AnkiDroid status whenever screen is visible and enabled
@@ -2622,7 +2622,7 @@ object SettingsDictionaryScreen : SearchableSettings {
                             checked = enabled,
                             onCheckedChanged = { checked ->
                                 if (!checked) {
-                                    updateProfile { copy(ankiEnabled = false) }
+                                    updateProfile { it.copy(ankiEnabled = false) }
                                     return@SwitchPreferenceWidget
                                 }
                                 scope.launch {
@@ -2638,7 +2638,7 @@ object SettingsDictionaryScreen : SearchableSettings {
                                         }
                                         return@launch
                                     }
-                                    updateProfile { copy(ankiEnabled = true) }
+                                    updateProfile { it.copy(ankiEnabled = true) }
                                 }
                             },
                         )
@@ -2667,7 +2667,7 @@ object SettingsDictionaryScreen : SearchableSettings {
                             value = selectedDeck,
                             entries = deckEntries,
                             title = stringResource(MR.strings.pref_anki_deck),
-                            onValueChanged = { updateProfile { copy(ankiDeck = it) } },
+                            onValueChanged = { value -> updateProfile { it.copy(ankiDeck = value) } },
                         ),
                     )
                 } else {
@@ -2687,7 +2687,7 @@ object SettingsDictionaryScreen : SearchableSettings {
                             title = stringResource(MR.strings.pref_anki_model),
                             onValueChanged = { newModel ->
                                 if (newModel != selectedModel) {
-                                    updateProfile { copy(ankiModel = newModel, ankiFieldMap = "{}") }
+                                    updateProfile { it.copy(ankiModel = newModel, ankiFieldMap = "{}") }
                                 }
                             },
                         ),
@@ -2713,8 +2713,8 @@ object SettingsDictionaryScreen : SearchableSettings {
                                 value = tags,
                                 canBeBlank = true,
                                 formatSubtitle = false,
-                                onConfirm = {
-                                    updateProfile { copy(ankiTags = it) }
+                                onConfirm = { newTags ->
+                                    updateProfile { it.copy(ankiTags = newTags) }
                                     true
                                 },
                             )
@@ -2852,7 +2852,7 @@ object SettingsDictionaryScreen : SearchableSettings {
                             SwitchPreferenceWidget(
                                 title = stringResource(MR.strings.pref_anki_check_duplicates),
                                 checked = dupCheck,
-                                onCheckedChanged = { updateProfile { copy(ankiDupCheck = it) } },
+                                onCheckedChanged = { value -> updateProfile { it.copy(ankiDupCheck = value) } },
                             )
                         },
                     ),
@@ -2864,7 +2864,7 @@ object SettingsDictionaryScreen : SearchableSettings {
                             value = if (dupScope == "all") "all" else "deck",
                             entries = dupScopeEntries,
                             title = stringResource(MR.strings.pref_anki_duplicate_scope),
-                            onValueChanged = { updateProfile { copy(ankiDupScope = it) } },
+                            onValueChanged = { value -> updateProfile { it.copy(ankiDupScope = value) } },
                         ),
                     )
                     add(
@@ -2875,7 +2875,7 @@ object SettingsDictionaryScreen : SearchableSettings {
                             },
                             entries = dupActionEntries,
                             title = stringResource(MR.strings.pref_anki_duplicate_action),
-                            onValueChanged = { updateProfile { copy(ankiDupAction = it) } },
+                            onValueChanged = { value -> updateProfile { it.copy(ankiDupAction = value) } },
                         ),
                     )
                 }
@@ -2885,7 +2885,7 @@ object SettingsDictionaryScreen : SearchableSettings {
                         value = cropMode.takeIf { it in cropModeEntries } ?: "full",
                         entries = cropModeEntries,
                         title = "Screenshot mode",
-                        onValueChanged = { updateProfile { copy(ankiCropMode = it) } },
+                        onValueChanged = { value -> updateProfile { it.copy(ankiCropMode = value) } },
                     ),
                 )
 
@@ -2898,7 +2898,7 @@ object SettingsDictionaryScreen : SearchableSettings {
                             value = cropPreset.takeIf { it in cropPresetMap } ?: "full",
                             entries = cropPresetMap,
                             title = "Crop preset",
-                            onValueChanged = { updateProfile { copy(ankiCropPreset = it) } },
+                            onValueChanged = { value -> updateProfile { it.copy(ankiCropPreset = value) } },
                         ),
                     )
                 }
@@ -2911,7 +2911,7 @@ object SettingsDictionaryScreen : SearchableSettings {
                                 title = "Sync on card create",
                                 subtitle = "Trigger AnkiDroid sync after mining a card",
                                 checked = activeProfile.ankiSyncOnCreate,
-                                onCheckedChanged = { updateProfile { copy(ankiSyncOnCreate = it) } },
+                                onCheckedChanged = { value -> updateProfile { it.copy(ankiSyncOnCreate = value) } },
                             )
                         },
                     ),
