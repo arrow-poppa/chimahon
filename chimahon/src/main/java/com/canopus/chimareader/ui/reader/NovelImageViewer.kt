@@ -180,6 +180,7 @@ fun NovelImageViewer(
             },
             update = { view ->
                 imageView = view
+                view.scanWholeWord = shouldScanWholeWord(ocrScanResolution, ocrLanguage.bcp47)
                 view.onViewClicked = onDismiss
                 view.onImageLongPressed = { x, y ->
                     menuPosition = IntOffset(x.roundToInt(), y.roundToInt())

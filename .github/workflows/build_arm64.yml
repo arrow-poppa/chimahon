@@ -45,6 +45,9 @@ jobs:
       - name: Run focused unit tests
         run: ./gradlew :chimahon:testDebugUnitTest --no-daemon
 
+      - name: Test dictionary result ordering
+        run: ./gradlew :app:testPreviewUnitTest --tests "eu.kanade.tachiyomi.ui.dictionary.DictionaryResultOrderingTest" --no-daemon
+
       - name: Build ARM64 APK
         run: ./gradlew :app:assemblePreview -PtargetAbis=arm64-v8a --no-daemon
 

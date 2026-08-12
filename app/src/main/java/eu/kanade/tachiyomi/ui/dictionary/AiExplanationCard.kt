@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -27,6 +27,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import chimahon.anki.AnkiProfile
 import kotlinx.coroutines.CancellationException
@@ -42,6 +46,8 @@ fun AiExplanationCard(
     sentence: String,
     hasDictionaryResults: Boolean,
     active: Boolean,
+    onExplanationChanged: (String) -> Unit = {},
+    onSelectedTextChanged: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val canShow = profile.aiEnabled &&
@@ -56,6 +62,9 @@ fun AiExplanationCard(
     var error by remember(profile.aiProvider, activeModel, target, sentence) { mutableStateOf<String?>(null) }
     var loading by remember(profile.aiProvider, activeModel, target, sentence) { mutableStateOf(false) }
     var requestJob by remember { mutableStateOf<Job?>(null) }
+    var explanationField by remember(explanation) {
+        mutableStateOf(TextFieldValue(text = explanation, selection = TextRange.Zero))
+    }
 
     fun generate(bypassCache: Boolean) {
         requestJob?.cancel()
@@ -86,6 +95,10 @@ fun AiExplanationCard(
         } else if (profile.aiAutoGenerate && explanation.isBlank() && !loading) {
             generate(false)
         }
+    }
+    LaunchedEffect(explanation) {
+        onExplanationChanged(explanation)
+        onSelectedTextChanged("")
     }
     DisposableEffect(Unit) {
         onDispose { requestJob?.cancel() }
@@ -125,15 +138,30 @@ fun AiExplanationCard(
                     Text(error.orEmpty(), color = MaterialTheme.colorScheme.error)
                     OutlinedButton(onClick = { generate(true) }) { Text("Try again") }
                 }
-                explanation.isNotBlank() -> SelectionContainer {
-                    Text(
-                        text = explanation,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier
-                            .heightIn(max = 180.dp)
-                            .verticalScroll(rememberScrollState()),
-                    )
-                }
+                explanation.isNotBlank() -> BasicTextField(
+                    value = explanationField,
+                    onValueChange = { value ->
+                        if (value.text == explanation) {
+                            explanationField = value
+                            val selection = value.selection
+                            val selectedText = if (selection.collapsed) {
+                                ""
+                            } else {
+                                explanation.substring(selection.min, selection.max)
+                            }
+                            onSelectedTextChanged(selectedText)
+                        }
+                    },
+                    readOnly = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                    cursorBrush = SolidColor(Color.Transparent),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 180.dp)
+                        .verticalScroll(rememberScrollState()),
+                )
                 else -> OutlinedButton(onClick = { generate(false) }) {
                     Text("Generate explanation")
                 }

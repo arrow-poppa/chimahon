@@ -2777,12 +2777,14 @@
       container.appendChild(upBtn);
       container.appendChild(downBtn);
       document.body.appendChild(container);
+      document.documentElement.classList.add('has-floating-nav');
     }
   }
 
   function removeFloatingNav() {
     const nav = document.getElementById('floating-nav');
     if (nav) nav.remove();
+    document.documentElement.classList.remove('has-floating-nav');
   }
 
   function resetTabBarLayout(container = document.getElementById('entries')) {

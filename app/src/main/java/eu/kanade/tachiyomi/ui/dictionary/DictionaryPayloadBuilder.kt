@@ -137,7 +137,14 @@ internal fun orderLookupResultsForDisplay(
     context: Context,
 ): List<LookupResult> {
     val priorityMap = dictionaryPriorityMap(profile, context)
-    if (priorityMap.isEmpty()) return results
+    return orderLookupResults(results, priorityMap)
+}
+
+/** Longest source match wins, exactly as a forward Yomitan scan expects. */
+internal fun orderLookupResults(
+    results: List<LookupResult>,
+    priorityMap: Map<String, Int>,
+): List<LookupResult> {
     if (results.size <= 1) return results.map { it.withOrderedDictionaries(priorityMap) }
 
     return results

@@ -9,6 +9,7 @@ import chimahon.GlossaryEntry
 import chimahon.LookupResult
 import chimahon.MediaInfo
 import chimahon.PitchEntry
+import chimahon.ai.isAiFallbackDictionaryEntry
 import chimahon.audio.WordAudioResult
 import chimahon.audio.WordAudioService
 import eu.kanade.tachiyomi.network.NetworkHelper
@@ -99,6 +100,7 @@ object Marker {
     const val SELECTION_TEXT = "selection-text"
     const val MISC_INFO = "misc-info"
     const val POPUP_SELECTION_TEXT = "popup-selection-text"
+    const val PLAIN_SELECTED_TEXT = "plain-selected-text"
     const val SELECTED_GLOSSARY = "selected-glossary"
     const val MEDIA_NAME = "media-name"
     const val WORD_AUDIO = "word-audio"
@@ -134,7 +136,7 @@ object Marker {
         URL, CHAPTER, MEDIA, MEDIA_NAME,
 
         // Other
-        SENTENCE_AUDIO, POPUP_SELECTION_TEXT,
+        SENTENCE_AUDIO, POPUP_SELECTION_TEXT, PLAIN_SELECTED_TEXT,
     )
 
     val ALL_WITH_TODO: List<String> = ALL
@@ -889,10 +891,17 @@ object AnkiCardCreator {
                 ""
             }
         }
-        Marker.POPUP_SELECTION_TEXT -> popupSelection?.let { escapeHtmlWithLineBreaks(it) } ?: ""
+        Marker.POPUP_SELECTION_TEXT, Marker.PLAIN_SELECTED_TEXT ->
+            popupSelection?.let { escapeHtmlWithLineBreaks(it) } ?: ""
         Marker.SELECTED_GLOSSARY -> {
             val selected = selectedDict?.takeIf { it.isNotBlank() }
-            if (selected != null) {
+            if (result.isAiFallbackDictionaryEntry()) {
+                result.term.glossaries
+                    .firstOrNull()
+                    ?.glossary
+                    ?.let(::escapeHtmlWithLineBreaks)
+                    .orEmpty()
+            } else if (selected != null) {
                 buildGlossary(
                     result.term.glossaries,
                     brief = false,

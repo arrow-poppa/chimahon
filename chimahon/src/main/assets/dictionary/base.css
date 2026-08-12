@@ -655,12 +655,17 @@ table {
 /* Floating Navigation */
 .floating-nav-container {
   position: fixed;
-  right: 16px;
-  bottom: 16px;
+  right: 8px;
+  bottom: 8px;
   display: flex;
   flex-direction: column;
   gap: 12px;
   z-index: 2000;
+}
+
+/* Keep the floating controls out of the hit area of audio/Anki buttons. */
+html.has-floating-nav .entries {
+  padding-right: 56px;
 }
 
 .floating-nav-btn {

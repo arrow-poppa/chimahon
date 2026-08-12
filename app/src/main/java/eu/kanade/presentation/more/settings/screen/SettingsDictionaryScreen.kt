@@ -234,6 +234,7 @@ private val markerSections = listOf(
             Marker.CLOZE_BODY_KANA,
             Marker.CLOZE_SUFFIX,
             Marker.POPUP_SELECTION_TEXT,
+            Marker.PLAIN_SELECTED_TEXT,
         ),
     ),
     MarkerSection(
@@ -314,6 +315,7 @@ private val markerDisplayLabels: Map<String, String> = Marker.ALL_WITH_TODO.asso
         Marker.SENTENCE_FURIGANA -> "${prefix}Sentence Furigana"
         Marker.SENTENCE_FURIGANA_PLAIN -> "${prefix}Sentence Furigana Plain"
         Marker.POPUP_SELECTION_TEXT -> "${prefix}Popup Selection"
+        Marker.PLAIN_SELECTED_TEXT -> "${prefix}Plain Selected Text"
         Marker.SELECTED_GLOSSARY -> "${prefix}Selected Glossary"
         else -> marker
     }

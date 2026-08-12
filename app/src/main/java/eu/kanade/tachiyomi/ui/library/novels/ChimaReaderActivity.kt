@@ -394,10 +394,12 @@ class ChimaReaderActivity : NovelReaderActivity() {
 
         lifecycleScope.launch(Dispatchers.Default) {
             val result = try { lookupDeferred?.await() } catch (_: Exception) { null }
-            val firstMatched = result?.results?.firstOrNull()?.matched
-            if (firstMatched != null && resolveAnchorFromWebView) {
-                val matchOffset = word.indexOf(firstMatched).coerceAtLeast(0)
-                val charCount = firstMatched.codePointCount(0, firstMatched.length)
+            val longestMatched = result?.results
+                ?.maxByOrNull { it.matched.codePointCount(0, it.matched.length) }
+                ?.matched
+            if (longestMatched != null && resolveAnchorFromWebView) {
+                val matchOffset = word.indexOf(longestMatched).coerceAtLeast(0)
+                val charCount = longestMatched.codePointCount(0, longestMatched.length)
                 withContext(Dispatchers.Main) {
                     pendingShowByRects = true
                     readerViewModel?.bridge?.send(com.canopus.chimareader.ui.reader.WebViewCommand.GetSelectionRects(charCount, matchOffset))

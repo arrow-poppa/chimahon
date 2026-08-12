@@ -836,8 +836,10 @@ class ReaderActivity : BaseActivity() {
                         lifecycleScope.launch(Dispatchers.Default) {
                             val result = try { deferredLookup.await() } catch (_: Exception) { null }
                             if (!viewModel.isOcrEnabled()) return@launch
-                            val firstMatched = result?.results?.firstOrNull()?.matched
-                            val charCount = firstMatched?.codePointCount(0, firstMatched.length)
+                            val longestMatched = result?.results
+                                ?.maxByOrNull { it.matched.codePointCount(0, it.matched.length) }
+                                ?.matched
+                            val charCount = longestMatched?.codePointCount(0, longestMatched.length)
 
                             val rect = withContext(Dispatchers.Main) {
                                 if (!viewModel.isOcrEnabled()) return@withContext null
@@ -899,8 +901,10 @@ class ReaderActivity : BaseActivity() {
                         lifecycleScope.launch(Dispatchers.Default) {
                             val result = try { deferredLookup.await() } catch (_: Exception) { null }
                             if (!viewModel.isOcrEnabled()) return@launch
-                            val firstMatched = result?.results?.firstOrNull()?.matched
-                            val charCount = firstMatched?.codePointCount(0, firstMatched.length)
+                            val longestMatched = result?.results
+                                ?.maxByOrNull { it.matched.codePointCount(0, it.matched.length) }
+                                ?.matched
+                            val charCount = longestMatched?.codePointCount(0, longestMatched.length)
 
                             val rect = withContext(Dispatchers.Main) {
                                 if (!viewModel.isOcrEnabled()) return@withContext null

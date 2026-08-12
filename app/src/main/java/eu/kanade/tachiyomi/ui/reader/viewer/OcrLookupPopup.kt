@@ -64,6 +64,10 @@ import chimahon.anki.AnkiMediaRequest
 import chimahon.anki.AnkiMediaWarning
 import chimahon.anki.AnkiProfile
 import chimahon.anki.AnkiResult
+import chimahon.ai.createAiFallbackLookupResult
+import chimahon.ai.getAiFallbackToken
+import chimahon.ai.isAiFallbackDictionaryEntry
+import chimahon.ai.withAiFallbackExplanation
 import chimahon.ocr.effectiveSearchResolution
 import chimahon.ocr.nextWordBoundarySubstring
 import chimahon.util.ImageEncoder
@@ -112,6 +116,8 @@ private data class LookupFrame(
     val mediaDataUris: Map<String, String>,
     val existingExpressions: Set<String>,
     val entryJsons: List<String>? = null,
+    val aiExplanation: String = "",
+    val aiSelectedText: String = "",
 )
 
 private data class RecursivePopupRequest(
@@ -325,7 +331,20 @@ fun OcrLookupPopup(
 
         fun handleResult(result: chimahon.DictionaryRepository.LookupResult2, orderedResults: List<LookupResult>, phaseStart: Long) {
             if (generation != lookupGeneration) return
-            if (isRecursive && result.results.isEmpty()) {
+            val fallbackResult = if (
+                orderedResults.isEmpty() &&
+                result.error == null &&
+                activeProfile.aiEnabled &&
+                activeProfile.aiUnknownWordFallback
+            ) {
+                getAiFallbackToken(finalQuery, activeProfile.languageCode)
+                    ?.let(::createAiFallbackLookupResult)
+            } else {
+                null
+            }
+            val displayResults = fallbackResult?.let(::listOf) ?: orderedResults
+
+            if (isRecursive && displayResults.isEmpty()) {
                 if (shouldShowLoading) isLoading = false
                 return
             }
@@ -336,7 +355,7 @@ fun OcrLookupPopup(
                 query = finalQuery,
                 sentence = sentenceContext,
                 sentenceOffset = sentenceOffsetContext,
-                results = orderedResults,
+                results = displayResults,
                 styles = result.styles,
                 mediaDataUris = result.mediaDataUris,
                 existingExpressions = emptySet(),
@@ -349,8 +368,8 @@ fun OcrLookupPopup(
 
             isLoading = false
 
-            if (!isRecursive && orderedResults.isNotEmpty()) {
-                val firstMatched = orderedResults.firstOrNull()?.matched
+            if (!isRecursive && displayResults.isNotEmpty()) {
+                val firstMatched = displayResults.firstOrNull()?.matched
                 if (firstMatched != null) {
                     val charCount = firstMatched.codePointCount(0, firstMatched.length)
                     val matchOffset = finalQuery.indexOf(firstMatched).coerceAtLeast(0)
@@ -361,8 +380,8 @@ fun OcrLookupPopup(
             }
 
             // Anki duplicate check runs in background, doesn't block UI
-            if (ankiEnabled && orderedResults.isNotEmpty()) {
-                val uniqueExpressions = orderedResults.map { it.term.expression }.distinct()
+            if (ankiEnabled && displayResults.isNotEmpty()) {
+                val uniqueExpressions = displayResults.map { it.term.expression }.distinct()
                 scope.launch(Dispatchers.IO) {
                     val existing = AnkiCardCreator.checkExistingCards(
                         context = context,
@@ -387,7 +406,7 @@ fun OcrLookupPopup(
 
             // Load media in background
             scope.launch(Dispatchers.IO) {
-                val media = repository.loadMediaAsync(finalQuery, orderedResults)
+                val media = repository.loadMediaAsync(finalQuery, displayResults)
                 if (media.isNotEmpty()) {
                     withContext(Dispatchers.Main) {
                         val stack = lookupStackState.stack.toMutableList()
@@ -531,10 +550,15 @@ fun OcrLookupPopup(
         popupSelection: String? = null,
         forceOpen: Boolean = false,
     ) {
-        val result = results.getOrNull(index) ?: return
+        val sourceResult = results.getOrNull(index) ?: return
         val miningFrame = currentFrame
+        val effectivePopupSelection = popupSelection
+            ?.takeIf { it.isNotBlank() }
+            ?: miningFrame?.aiSelectedText?.takeIf { it.isNotBlank() }
+            ?: miningFrame?.aiExplanation?.takeIf { it.isNotBlank() }
+        val result = sourceResult.withAiFallbackExplanation(miningFrame?.aiExplanation.orEmpty())
         val miningSentence = miningFrame?.sentence ?: fullText
-        val miningOffset = result.matched
+        val miningOffset = sourceResult.matched
             .takeIf { it.isNotBlank() }
             ?.let { miningSentence.indexOf(it) }
             ?.takeIf { it >= 0 }
@@ -578,7 +602,7 @@ fun OcrLookupPopup(
                     glossaryIndex = glossaryIndex,
                     selection = result.matched,
                     selectedDict = selectedDict,
-                    popupSelection = popupSelection,
+                    popupSelection = effectivePopupSelection,
                     styles = styles,
                     forceOpen = forceOpen,
                     type = type,
@@ -658,7 +682,7 @@ fun OcrLookupPopup(
                     sentenceAudioBytes = sentenceAudioBytes,
                     selection = result.matched,
                     selectedDict = selectedDict,
-                    popupSelection = popupSelection,
+                    popupSelection = effectivePopupSelection,
                     styles = styles,
                     forceOpen = forceOpen,
                     type = type,
@@ -1183,12 +1207,31 @@ fun OcrLookupPopup(
                     PopupCloseChrome()
                 }
                 currentFrame?.let { frame ->
+                    val aiTarget = frame.results.firstOrNull()?.term?.expression
+                        ?.takeIf { it.isNotBlank() }
+                        ?: frame.query
                     AiExplanationCard(
                         profile = activeProfile,
-                        target = frame.query,
+                        target = aiTarget,
                         sentence = frame.sentence,
-                        hasDictionaryResults = frame.results.isNotEmpty(),
+                        hasDictionaryResults = frame.results.any { !it.isAiFallbackDictionaryEntry() },
                         active = visible,
+                        onExplanationChanged = { explanation ->
+                            val stack = lookupStackState.stack.toMutableList()
+                            val frameIndex = stack.indexOfFirst { it.id == frame.id }
+                            if (frameIndex >= 0 && stack[frameIndex].aiExplanation != explanation) {
+                                stack[frameIndex] = stack[frameIndex].copy(aiExplanation = explanation)
+                                lookupStackState = lookupStackState.copy(stack = stack)
+                            }
+                        },
+                        onSelectedTextChanged = { selectedText ->
+                            val stack = lookupStackState.stack.toMutableList()
+                            val frameIndex = stack.indexOfFirst { it.id == frame.id }
+                            if (frameIndex >= 0 && stack[frameIndex].aiSelectedText != selectedText) {
+                                stack[frameIndex] = stack[frameIndex].copy(aiSelectedText = selectedText)
+                                lookupStackState = lookupStackState.copy(stack = stack)
+                            }
+                        },
                     )
                 }
                 Box(
