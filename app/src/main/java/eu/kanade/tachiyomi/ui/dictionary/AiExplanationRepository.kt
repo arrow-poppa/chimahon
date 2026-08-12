@@ -2,6 +2,8 @@ package eu.kanade.tachiyomi.ui.dictionary
 
 import chimahon.ai.AiExplanationService
 import chimahon.anki.AnkiProfile
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 
 class AiExplanationRepository(
@@ -33,12 +35,14 @@ class AiExplanationRepository(
                 cache[key]?.takeIf { now() - it.createdAt < CACHE_TTL_MS }?.let { return it.text }
             }
         }
-        val text = service.generate(
-            profile = profile,
-            apiKey = secretStore.get(profile.aiProvider),
-            target = target,
-            sentence = sentence,
-        )
+        val text = withContext(Dispatchers.IO) {
+            service.generate(
+                profile = profile,
+                apiKey = secretStore.get(profile.aiProvider),
+                target = target,
+                sentence = sentence,
+            )
+        }
         synchronized(cache) {
             cache[key] = CacheEntry(text, now())
             while (cache.size > MAX_CACHE_ENTRIES) cache.remove(cache.entries.first().key)
@@ -46,14 +50,16 @@ class AiExplanationRepository(
         return text
     }
 
-    suspend fun testConnection(profile: AnkiProfile): Result<Unit> = runCatching {
-        service.generate(
-            profile = profile,
-            apiKey = secretStore.get(profile.aiProvider),
-            target = "test",
-            sentence = "This is a connection test.",
-        )
-        Unit
+    suspend fun testConnection(profile: AnkiProfile): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            service.generate(
+                profile = profile,
+                apiKey = secretStore.get(profile.aiProvider),
+                target = "test",
+                sentence = "This is a connection test.",
+            )
+            Unit
+        }
     }
 
     private data class CacheKey(
