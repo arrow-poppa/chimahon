@@ -439,7 +439,7 @@ class AnimeDownloader(
             retryWithBackoff(maxRetries = 3, initialDelay = 2000L) { attempt ->
                 var lastNotifyTime = 0L
                 val statCallback = StatisticsCallback { stats ->
-                    val outTime = stats.time / 1000L
+                    val outTime = (stats.time / 1000.0).toLong()
                     if (outTime > 0) {
                         download.progress = ((100 * outTime) / duration).toInt().coerceIn(0, 100)
                         val now = System.currentTimeMillis()
@@ -462,13 +462,13 @@ class AnimeDownloader(
                         ffmpegOptions,
                         { returnedSession ->
                             currentFFmpegSession = null
-                            if (ReturnCode.isSuccess(returnedSession.returnCode)) {
+                            if (ReturnCode.isSuccess(returnedSession.getReturnCode())) {
                                 cont.resume(Unit)
                             } else {
                                 val detail = buildFFmpegFailureMessage(
-                                    exitCode = returnedSession.returnCode.toString(),
-                                    failStackTrace = returnedSession.failStackTrace,
-                                    logs = returnedSession.allLogsAsString,
+                                    exitCode = returnedSession.getReturnCode().toString(),
+                                    failStackTrace = returnedSession.getFailStackTrace(),
+                                    logs = returnedSession.getAllLogsAsString(),
                                 )
                                 cont.resumeWithException(Exception(detail))
                             }
@@ -567,16 +567,16 @@ class AnimeDownloader(
     private suspend fun getDuration(ffprobeCommand: Array<String>): Float? {
         return suspendCancellableCoroutine { continuation ->
             val session = FFprobeKit.executeWithArgumentsAsync(ffprobeCommand) {
-                if (ReturnCode.isSuccess(it.returnCode)) {
+                if (ReturnCode.isSuccess(it.getReturnCode())) {
                     continuation.resume(it)
                 } else {
-                    val err = it.allLogsAsString?.trim() ?: it.output
+                    val err = it.getAllLogsAsString().trim()
                     logcat(LogPriority.ERROR) { "ffprobe failed: $err" }
                     continuation.resumeWithException(Exception("ffprobe failed: $err"))
                 }
             }
             continuation.invokeOnCancellation { session.cancel() }
-        }.runCatching { allLogsAsString.trim().toFloatOrNull() }.getOrDefault(null)
+        }.runCatching { getAllLogsAsString().trim().toFloatOrNull() }.getOrDefault(null)
     }
 
     private fun cancelFFmpeg() {

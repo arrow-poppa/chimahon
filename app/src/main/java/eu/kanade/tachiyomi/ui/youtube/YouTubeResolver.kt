@@ -115,7 +115,6 @@ class YouTubeResolver {
 
                 val streams = (extractor.videoStreams + extractor.videoOnlyStreams)
                     .filter { it.content.isNotBlank() }
-                    .filter { !it.isVideoOnly() || audioTracks.isNotEmpty() }
                     .sortedWith(
                         compareByDescending<VideoStream> {
                             parseResolution(it.getResolution().ifBlank { it.quality.orEmpty() })
@@ -144,9 +143,28 @@ class YouTubeResolver {
 
                 }
 
-                val videos = streamVideos.distinctBy { it.videoTitle to it.videoUrl }
+                val videos = streamVideos.distinctBy { it.videoTitle to it.videoUrl }.toMutableList()
+
+                // HLS fallback (mpv plays .m3u8 natively): add an adaptive entry when the
+                // progressive/DASH ladder is thin, so users always have more qualities.
+                val hlsUrl = runCatching { extractor.hlsUrl }.getOrNull()?.takeIf { it.isNotBlank() }
+                if (hlsUrl != null) {
+                    val maxRes = videos.maxOfOrNull { parseResolution(it.videoTitle) } ?: 0
+                    if (videos.size < 3 || maxRes < 1080) {
+                        videos += Video(
+                            videoUrl = hlsUrl,
+                            videoTitle = "Auto (HLS)",
+                            resolution = null,
+                            subtitleTracks = subtitleTracks,
+                            audioTracks = emptyList(),
+                            initialized = true,
+                            videoPageUrl = extractor.url,
+                        ).withoutExternalSubtitleLookup()
+                    }
+                }
+
                 val preferred = selectPreferredVideo(videos, preferredQuality)
-                videos.map { video ->
+                val videosWithPreferred = videos.map { video ->
                     video.copy(preferred = video == preferred)
                 }
 
@@ -182,7 +200,7 @@ class YouTubeResolver {
                         else -> null
                     },
                     videoDescription = extractor.description.content,
-                    videoStreams = videos,
+                    videoStreams = videosWithPreferred,
 
                     channelId = channelId,
                     channelName = extractor.uploaderName,
@@ -295,13 +313,19 @@ class YouTubeResolver {
             val normalized = res.lowercase()
             return when {
                 "8k" in normalized -> 4320
-                "4k" in normalized -> 2160
+                "4k" in normalized || "2160" in normalized -> 2160
+                "highres" in normalized -> 1080
                 else -> Regex("""(\d{3,4})\s*p?""")
                     .find(normalized)
                     ?.groupValues
                     ?.getOrNull(1)
                     ?.toIntOrNull()
-                    ?: 0
+                    ?: when {
+                        // Legacy YouTube quality labels without digits
+                        "medium" in normalized -> 480
+                        "small" in normalized -> 240
+                        else -> 0
+                    }
             }
         }
 

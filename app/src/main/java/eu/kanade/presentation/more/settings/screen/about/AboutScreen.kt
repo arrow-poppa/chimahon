@@ -64,7 +64,7 @@ import java.time.ZoneId
 
 class AboutScreen : Screen() {
     @Suppress("unused")
-    private fun readResolve(): Any = AboutScreen
+    private fun readResolve(): Any = AboutScreen()
 
     @Composable
     override fun Content() {

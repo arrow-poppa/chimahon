@@ -186,6 +186,39 @@ class OcrManager(
         return true
     }
 
+    fun retryChapter(chapterId: Long): Boolean {
+        val task = ocrStore.get(chapterId) ?: return false
+        if (task.status != OcrQueueStatus.ERROR) return false
+        ocrStore.save(
+            task.copy(
+                status = OcrQueueStatus.PENDING,
+            ),
+        )
+        scope.launch {
+            refreshQueueState()
+        }
+        triggerChannel.trySend(Unit)
+        OcrJob.start(context)
+        return true
+    }
+
+    fun retryAllErrors() {
+        val errorTasks = ocrStore.getAll().filter { it.status == OcrQueueStatus.ERROR }
+        if (errorTasks.isEmpty()) return
+        errorTasks.forEach { task ->
+            ocrStore.save(
+                task.copy(
+                    status = OcrQueueStatus.PENDING,
+                ),
+            )
+        }
+        scope.launch {
+            refreshQueueState()
+        }
+        triggerChannel.trySend(Unit)
+        OcrJob.start(context)
+    }
+
     suspend fun cancelChapter(chapterId: Long) {
         ocrStore.remove(chapterId)
         runningJobs[chapterId]?.cancel()
@@ -307,7 +340,13 @@ class OcrManager(
                                 ocrStore.remove(nextTask.chapterId)
                             }
                             OcrTaskResult.ERROR -> Unit
-                            OcrTaskResult.STOPPED -> Unit
+                            OcrTaskResult.STOPPED -> {
+                                if (ocrStore.get(nextTask.chapterId) != null) {
+                                    updateStoredTask(nextTask.chapterId) { current ->
+                                        current.copy(status = OcrQueueStatus.PENDING)
+                                    }
+                                }
+                            }
                         }
                     } catch (e: CancellationException) {
                         if (ocrStore.get(nextTask.chapterId) != null) {
@@ -332,6 +371,8 @@ class OcrManager(
             }
         } finally {
             prefJob.cancel()
+            runningJobs.values.forEach { it.cancel() }
+            runningJobs.clear()
         }
     }
 
@@ -633,6 +674,79 @@ class OcrManager(
 
                     updateStoredTask(chapterId) {
                         it.copy(currentPage = pageIndex + 1, totalPages = pageCount, status = OcrQueueStatus.PROCESSING)
+                    }
+                }
+
+                // Pass 2: Automatic retry pass for any pages that failed during Pass 1
+                if (failedPages > 0 && !stopRequested() && ocrStore.get(chapterId) != null) {
+                    logcat(LogPriority.INFO) { "OcrManager: retrying $failedPages failed pages for chapter ${chapter.name}" }
+                    for (pageIndex in 0 until pageCount) {
+                        if (stopRequested() || ocrStore.get(chapterId) == null) break
+                        if (ocrCacheManager.loadOcrBlocks(manga, chapter, source, pageIndex) != null) continue
+
+                        val bytes = try {
+                            imageProvider.getPageBytes(pageIndex)
+                        } catch (_: Exception) { null } ?: continue
+
+                        try {
+                            val result = retryWithBackoff(times = 3) {
+                                recognizePage(bytes = bytes, language = ocrLang)
+                            }
+                            val blocks = result.mapNotNull { r ->
+                                val bbox = r.tightBoundingBox
+                                val xmin = bbox.x.toFloat().coerceIn(0f, 1f)
+                                val ymin = bbox.y.toFloat().coerceIn(0f, 1f)
+                                val xmax = (bbox.x + bbox.width).toFloat().coerceIn(0f, 1f)
+                                val ymax = (bbox.y + bbox.height).toFloat().coerceIn(0f, 1f)
+
+                                val lineGeometries = r.constituentBoxes?.map { lineBox ->
+                                    OcrLineGeometry(
+                                        xmin = lineBox.x.toFloat().coerceIn(0f, 1f),
+                                        ymin = lineBox.y.toFloat().coerceIn(0f, 1f),
+                                        xmax = (lineBox.x + lineBox.width).toFloat().coerceIn(0f, 1f),
+                                        ymax = (lineBox.y + lineBox.height).toFloat().coerceIn(0f, 1f),
+                                        rotation = (lineBox.rotation ?: 0.0).toFloat(),
+                                    )
+                                }
+
+                                if (xmax <= xmin || ymax <= ymin) {
+                                    null
+                                } else {
+                                    OcrTextBlock(
+                                        xmin = xmin,
+                                        ymin = ymin,
+                                        xmax = xmax,
+                                        ymax = ymax,
+                                        lines = r.text.split("\n"),
+                                        vertical = r.forcedOrientation == "vertical",
+                                        lineGeometries = lineGeometries,
+                                    )
+                                }
+                            }
+
+                            ocrCacheManager.saveOcrBlocks(
+                                manga = manga,
+                                chapter = chapter,
+                                source = source,
+                                pageIndex = pageIndex,
+                                blocks = blocks.map {
+                                    ChimahonOcrTextBlock(
+                                        xmin = it.xmin,
+                                        ymin = it.ymin,
+                                        xmax = it.xmax,
+                                        ymax = it.ymax,
+                                        lines = it.lines,
+                                        vertical = it.vertical,
+                                        lineGeometries = it.lineGeometries?.map { lg ->
+                                            chimahon.ocr.OcrLineGeometry(lg.xmin, lg.ymin, lg.xmax, lg.ymax, lg.rotation)
+                                        },
+                                    )
+                                },
+                                language = ocrLang.bcp47,
+                            )
+                        } catch (e: Exception) {
+                            logcat(LogPriority.WARN, e) { "OcrManager: retry failed for page $pageIndex" }
+                        }
                     }
                 }
             } finally {

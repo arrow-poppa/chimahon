@@ -66,4 +66,13 @@ class NovelCategoryStorage(private val context: Context) {
             saveCategories(categories)
         }
     }
+
+    fun setCategoryHidden(categoryId: String, hidden: Boolean) {
+        val categories = loadAllCategories().toMutableList()
+        val index = categories.indexOfFirst { it.id == categoryId }
+        if (index != -1) {
+            categories[index] = categories[index].copy(hidden = hidden)
+            saveCategories(categories)
+        }
+    }
 }

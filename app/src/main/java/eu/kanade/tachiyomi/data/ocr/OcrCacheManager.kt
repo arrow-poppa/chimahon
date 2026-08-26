@@ -45,47 +45,29 @@ class OcrCacheManager(
     companion object {
         private const val OCR_CACHE_FILE = ".ocr_cache.json"
         private const val OCR_SIDECAR_SUFFIX = ".ocr.json"
-        private const val TMP_SUFFIX = ".tmp"
         private const val CURRENT_VERSION = 2
         private const val INTERNAL_OCR_DIR = "ocr_cache"
     }
 
     /**
-     * Atomically write JSON to a file by writing to a temp file first, then renaming.
-     * If interrupted mid-write, only the .tmp file is corrupted; the original is preserved.
+     * Safely write JSON to a file using UniFile output stream.
      */
-    private fun atomicWrite(targetFile: UniFile, jsonString: String) {
-        val tmpFile = targetFile.parentFile?.createFile("${targetFile.name}$TMP_SUFFIX")
-            ?: run {
-                logcat(LogPriority.ERROR) { "OcrCache: Failed to create temp file for atomic write" }
-                return
-            }
+    private fun writeJson(targetFile: UniFile, jsonString: String) {
         try {
-            tmpFile.openOutputStream().bufferedWriter().use {
+            targetFile.openOutputStream().bufferedWriter().use {
                 it.write(jsonString)
                 it.flush()
             }
-            targetFile.delete()
-            if (!tmpFile.renameTo(targetFile.name ?: return)) {
-                logcat(LogPriority.WARN) { "OcrCache: rename failed, trying fallback" }
-                // Fallback: write directly (some storage backends don't support rename)
-                targetFile.openOutputStream().bufferedWriter().use {
-                    it.write(jsonString)
-                    it.flush()
-                }
-                tmpFile.delete()
-            }
         } catch (e: Exception) {
-            tmpFile.delete()
-            logcat(LogPriority.ERROR, e) { "OcrCache: atomic write failed" }
+            logcat(LogPriority.ERROR, e) { "OcrCache: Failed to write OCR cache file ${targetFile.name}" }
             throw e
         }
     }
 
     /**
-     * Read and parse OCR data from a file, returning null if the file is corrupt.
+     * Read and parse OCR data from a file, returning empty data if blank or corrupt.
      */
-    private fun readOcrData(cacheFile: UniFile): OcrChapterData? {
+    private fun readOcrData(cacheFile: UniFile): OcrChapterData {
         return try {
             val content = cacheFile.openInputStream().bufferedReader().use { it.readText() }
             if (content.isBlank()) {
@@ -94,14 +76,14 @@ class OcrCacheManager(
                 json.decodeFromString<OcrChapterData>(content)
             }
         } catch (e: Exception) {
-            logcat(LogPriority.WARN, e) { "OcrCache: corrupt cache file, skipping write to avoid data loss" }
-            null
+            logcat(LogPriority.WARN, e) { "OcrCache: Corrupt or unreadable cache file ${cacheFile.name}, resetting" }
+            OcrChapterData(pages = emptyMap(), version = CURRENT_VERSION)
         }
     }
 
     private fun hasNormalOcrPages(cacheFile: UniFile?): Boolean {
         if (cacheFile?.exists() != true) return false
-        return readOcrData(cacheFile)?.pages?.isNotEmpty() == true
+        return readOcrData(cacheFile).pages.isNotEmpty()
     }
 
     /**
@@ -326,7 +308,7 @@ class OcrCacheManager(
             return
         }
 
-        val chapterData = readOcrData(cacheFile) ?: return
+        val chapterData = readOcrData(cacheFile)
 
         val pageData = OcrPageData(
             blocks = blocks.map { it.toBlockData() },
@@ -335,7 +317,7 @@ class OcrCacheManager(
         )
 
         val newData = chapterData.withPage(pageIndex, pageData, cacheVariant)
-        atomicWrite(cacheFile, json.encodeToString(newData))
+        writeJson(cacheFile, json.encodeToString(newData))
     }
 
     /**
@@ -389,7 +371,7 @@ class OcrCacheManager(
             return
         }
 
-        val chapterData = readOcrData(sidecarFile) ?: return
+        val chapterData = readOcrData(sidecarFile)
 
         val pageData = OcrPageData(
             blocks = blocks.map { it.toBlockData() },
@@ -398,7 +380,7 @@ class OcrCacheManager(
         )
 
         val newData = chapterData.withPage(pageIndex, pageData, cacheVariant)
-        atomicWrite(sidecarFile, json.encodeToString(newData))
+        writeJson(sidecarFile, json.encodeToString(newData))
     }
 
     /**
@@ -461,7 +443,8 @@ class OcrCacheManager(
         val cacheFile = getInternalCacheFile(manga, chapter, source)
 
         val chapterData = if (cacheFile.exists()) {
-            readOcrData(com.hippo.unifile.UniFile.fromFile(cacheFile) ?: return) ?: return
+            val uniFile = com.hippo.unifile.UniFile.fromFile(cacheFile)
+            if (uniFile != null) readOcrData(uniFile) else OcrChapterData(pages = emptyMap(), version = CURRENT_VERSION)
         } else {
             OcrChapterData(pages = emptyMap(), version = CURRENT_VERSION)
         }

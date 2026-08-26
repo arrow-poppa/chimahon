@@ -46,7 +46,7 @@ abstract class AnimeSearchScreenModel(
     private val coroutineDispatcher = Executors.newFixedThreadPool(5).asCoroutineDispatcher()
     private var searchJob: Job? = null
 
-    private val enabledLanguages = sourcePreferences.enabledLanguages().get()
+    private val enabledLanguages = sourcePreferences.enabledAnimeLanguages().get()
     private val disabledSources = sourcePreferences.disabledAnimeSources().get()
     protected val pinnedSources = sourcePreferences.pinnedAnimeSources().get()
 

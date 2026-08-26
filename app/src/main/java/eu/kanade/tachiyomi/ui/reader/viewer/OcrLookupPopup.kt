@@ -38,7 +38,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
@@ -51,9 +50,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.text.style.TextOverflow
-import eu.kanade.domain.ui.model.ThemeMode
 import eu.kanade.domain.ui.UiPreferences
-import eu.kanade.presentation.theme.colorscheme.CustomColorScheme
 import chimahon.DictionaryRepository
 import chimahon.KanjiEntry
 import chimahon.KanjiResult
@@ -76,6 +73,7 @@ import eu.kanade.tachiyomi.ui.dictionary.DictionaryEntryWebView
 import eu.kanade.tachiyomi.ui.dictionary.AiExplanationCard
 import eu.kanade.tachiyomi.ui.dictionary.DictionaryPreferences
 import eu.kanade.tachiyomi.ui.dictionary.getDictionaryColorScheme
+import eu.kanade.tachiyomi.ui.dictionary.resolveDictionaryTheme
 import eu.kanade.tachiyomi.ui.dictionary.TabInfo
 import eu.kanade.tachiyomi.ui.dictionary.getDictionaryPaths
 import eu.kanade.tachiyomi.ui.dictionary.orderLookupResultsForDisplay
@@ -115,6 +113,7 @@ private data class LookupFrame(
     val styles: List<chimahon.DictionaryStyle>,
     val mediaDataUris: Map<String, String>,
     val existingExpressions: Set<String>,
+    val existingCardIds: Map<String, Long> = emptyMap(),
     val entryJsons: List<String>? = null,
     val aiExplanation: String = "",
     val aiSelectedText: String = "",
@@ -268,17 +267,38 @@ fun OcrLookupPopup(
     val customColor by dictionaryPreferences.customColor().collectAsState()
 
     val uiPreferences = remember { Injekt.get<UiPreferences>() }
-    val seedColor = if (customColor == 0) uiPreferences.colorTheme().get() else customColor
-    val isAmoled = themeMode == "pure_black"
-    val isDark = remember(seedColor, customColor, systemIsDark, themeMode) {
-        when (themeMode) {
-            "dark", "pure_black" -> true
-            "light" -> false
-            else -> if (customColor != 0) Color(seedColor).luminance() < 0.5f else systemIsDark
-        }
+    val appAmoled by uiPreferences.themeDarkAmoled().collectAsState()
+    val appThemeMode by uiPreferences.themeMode().collectAsState()
+    val appColorTheme by uiPreferences.colorTheme().collectAsState()
+    val resolvedTheme = remember(
+        themeMode,
+        customColor,
+        eInkMode,
+        systemIsDark,
+        appThemeMode,
+        appAmoled,
+        appColorTheme,
+    ) {
+        resolveDictionaryTheme(
+            themeMode = themeMode,
+            customColor = customColor,
+            eInkMode = eInkMode,
+            forceDefaultTheme = false,
+            systemIsDark = systemIsDark,
+            appThemeMode = appThemeMode,
+            appAmoled = appAmoled,
+            appColorTheme = appColorTheme,
+        )
     }
-    val colorScheme = remember(isDark, isAmoled, seedColor) {
-        getDictionaryColorScheme(isDark, isAmoled, seedColor)
+    val isDark = resolvedTheme.isDark
+    val isAmoled = resolvedTheme.isAmoled
+    val seedColor = resolvedTheme.seedColor
+    val colorScheme = if (resolvedTheme.useAppTheme) {
+        MaterialTheme.colorScheme
+    } else {
+        remember(isDark, isAmoled, seedColor) {
+            getDictionaryColorScheme(isDark, isAmoled, seedColor)
+        }
     }
     val BgColor = remember(isDark, isAmoled, seedColor, colorScheme) {
         if (isAmoled && isDark) Color.Black else colorScheme.surface
@@ -383,7 +403,7 @@ fun OcrLookupPopup(
             if (ankiEnabled && displayResults.isNotEmpty()) {
                 val uniqueExpressions = displayResults.map { it.term.expression }.distinct()
                 scope.launch(Dispatchers.IO) {
-                    val existing = AnkiCardCreator.checkExistingCards(
+                    val existingCardIds = AnkiCardCreator.checkExistingCardIds(
                         context = context,
                         expressions = uniqueExpressions,
                         deckName = ankiDeck,
@@ -393,7 +413,10 @@ fun OcrLookupPopup(
                         val stack = lookupStackState.stack.toMutableList()
                         val frameIndex = stack.indexOfFirst { it.id == frame.id }
                         if (frameIndex >= 0) {
-                            stack[frameIndex] = stack[frameIndex].copy(existingExpressions = existing)
+                            stack[frameIndex] = stack[frameIndex].copy(
+                                existingExpressions = existingCardIds.keys,
+                                existingCardIds = existingCardIds,
+                            )
                             lookupStackState = lookupStackState.copy(stack = stack)
                         }
                         Log.i(
@@ -507,9 +530,9 @@ fun OcrLookupPopup(
         ).toDp().coerceAtLeast(120.dp)
         Pair(
             if (isRecursiveChild) popupWidthPref.dp.coerceAtMost(childMaxWidth).coerceAtLeast(120.dp)
-            else popupWidthPref.dp.coerceIn(280.dp, sw * 0.9f),
+            else popupWidthPref.dp.coerceAtLeast(280.dp).coerceAtMost(sw * 0.9f),
             if (isRecursiveChild) popupHeightPref.dp.coerceAtMost(childMaxHeight).coerceAtLeast(120.dp)
-            else popupHeightPref.dp.coerceIn(200.dp, sh * 0.8f),
+            else popupHeightPref.dp.coerceAtLeast(200.dp).coerceAtMost(sh * 0.8f),
         )
     }
 
@@ -565,15 +588,41 @@ fun OcrLookupPopup(
             ?: (miningFrame?.sentenceOffset ?: charOffset)
 
         // Local helper to update the state, which triggers the optimized JS call via DictionaryEntryWebView
-        fun updateStatus(expression: String) {
+        fun updateStatus(expression: String, noteId: Long? = null) {
             val frame = currentFrame ?: return
             val stack = lookupStackState.stack.toMutableList()
             val frameIndex = stack.indexOfFirst { it.id == frame.id }
             if (frameIndex >= 0) {
                 val newExisting = frame.existingExpressions + expression
-                stack[frameIndex] = stack[frameIndex].copy(existingExpressions = newExisting)
+                val newCardIds = noteId?.let { frame.existingCardIds + (expression to it) } ?: frame.existingCardIds
+                stack[frameIndex] = stack[frameIndex].copy(
+                    existingExpressions = newExisting,
+                    existingCardIds = newCardIds,
+                )
                 lookupStackState = lookupStackState.copy(stack = stack)
             }
+        }
+
+        if (forceOpen) {
+            val expression = result.term.expression
+            val noteId = currentFrame?.existingCardIds?.get(expression)
+            if (noteId != null) {
+                chimahon.anki.AnkiDroidBridge(context).guiEditNote(noteId)
+                return
+            }
+            miningScope.launch {
+                val fallbackNoteId = AnkiCardCreator.findExistingCardId(
+                    context = context,
+                    expression = expression,
+                    deckName = ankiDeck,
+                    dupScope = ankiDupScope,
+                ) ?: return@launch
+                withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    updateStatus(expression, fallbackNoteId)
+                    chimahon.anki.AnkiDroidBridge(context).guiEditNote(fallbackNoteId)
+                }
+            }
+            return
         }
 
         val shouldUseCropMode = screenshotFieldMapped && cropMode == "crop" && onCropTriggered != null
@@ -615,17 +664,17 @@ fun OcrLookupPopup(
                     withContext(kotlinx.coroutines.Dispatchers.Main) {
                         when (ankiResult) {
                             is AnkiResult.Success -> {
-                                updateStatus(result.term.expression)
+                                updateStatus(result.term.expression, ankiResult.noteId)
                                 onAnkiMediaWarnings(ankiResult.mediaWarnings)
                                 dismissPopup()
                                 onCropTriggered.invoke(ankiResult.noteId, glossaryIndex)
                             }
                             is AnkiResult.CardExists -> {
-                                updateStatus(result.term.expression)
+                                updateStatus(result.term.expression, ankiResult.noteId)
                                 context.toast(MR.strings.anki_card_exists)
                             }
                             is AnkiResult.OpenCard -> {
-                                updateStatus(result.term.expression)
+                                updateStatus(result.term.expression, ankiResult.noteId)
                                 chimahon.anki.AnkiDroidBridge(context).guiEditNote(ankiResult.noteId)
                             }
                             else -> {}
@@ -694,16 +743,16 @@ fun OcrLookupPopup(
                 withContext(kotlinx.coroutines.Dispatchers.Main) {
                     when (ankiResult) {
                         is AnkiResult.Success -> {
-                            updateStatus(result.term.expression)
+                            updateStatus(result.term.expression, ankiResult.noteId)
                             onAnkiMediaWarnings(ankiResult.mediaWarnings)
                             context.toast(MR.strings.anki_card_added)
                         }
                         is AnkiResult.CardExists -> {
-                            updateStatus(result.term.expression)
+                            updateStatus(result.term.expression, ankiResult.noteId)
                             context.toast(MR.strings.anki_card_exists)
                         }
                         is AnkiResult.OpenCard -> {
-                            updateStatus(result.term.expression)
+                            updateStatus(result.term.expression, ankiResult.noteId)
                             chimahon.anki.AnkiDroidBridge(context).guiEditNote(ankiResult.noteId)
                         }
                         is AnkiResult.PermissionDenied -> context.toast(MR.strings.pref_anki_permission_denied)
@@ -1197,6 +1246,7 @@ fun OcrLookupPopup(
                     // Consume taps on the popup itself to prevent them from falling through to the reader
                 },
             shape = RoundedCornerShape(if (eInkMode) 0.dp else 8.dp),
+            border = if (eInkMode) BorderStroke(1.dp, if (isDark) Color.White else Color.Black) else null,
             color = BgColor,
             tonalElevation = 0.dp,
             shadowElevation = if (eInkMode) 0.dp else 6.dp,

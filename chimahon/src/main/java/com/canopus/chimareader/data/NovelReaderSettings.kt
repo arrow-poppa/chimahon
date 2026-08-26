@@ -213,7 +213,7 @@ class NovelReaderSettings(private val context: Context, private val namespace: S
     }
 
     val statisticsAutostartMode: Flow<StatisticsAutostartMode> = dataStore.data.map { prefs ->
-        StatisticsAutostartMode.valueOf(prefs[keys.STATISTICS_AUTOSTART_MODE] ?: StatisticsAutostartMode.ON.name)
+        StatisticsAutostartMode.valueOf(prefs[keys.STATISTICS_AUTOSTART_MODE] ?: StatisticsAutostartMode.OFF.name)
     }
 
     val readerShowReadingSpeed: Flow<Boolean> = dataStore.data.map { prefs ->

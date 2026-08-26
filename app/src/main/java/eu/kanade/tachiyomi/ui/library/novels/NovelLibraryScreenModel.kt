@@ -15,6 +15,8 @@ import eu.kanade.presentation.library.components.LibraryToolbarTitle
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import tachiyomi.core.common.preference.CheckboxState
@@ -32,6 +34,12 @@ class NovelLibraryScreenModel(
 
     init {
         loadLibrary()
+
+        libraryPreferences.showHiddenCategories().changes()
+            .onEach { showHiddenCategories ->
+                mutableState.update { it.copy(showHiddenCategories = showHiddenCategories) }
+            }
+            .launchIn(screenModelScope)
     }
 
     fun loadLibrary() {
@@ -269,13 +277,18 @@ class NovelLibraryScreenModel(
         val sortDescending: Boolean = true,
         val isImporting: Boolean = false,
         val importResult: Pair<Int, Int>? = null,
+        val showHiddenCategories: Boolean = false,
     ) {
         val hasActiveFilters: Boolean = false
         val isLibraryEmpty: Boolean = books.isEmpty()
         val selectionMode: Boolean = selection.isNotEmpty()
 
         val displayedCategories: List<NovelCategory>
-            get() = categories.filterNot { it.isSystemCategory && getBooksForCategory(it).isEmpty() }
+            get() = categories.filterNot {
+                it.isSystemCategory && getBooksForCategory(it).isEmpty()
+            }.filterNot {
+                it.hidden && !showHiddenCategories
+            }
 
         val coercedActiveCategoryIndex: Int
             get() = activeCategoryIndex.coerceIn(0, (displayedCategories.size - 1).coerceAtLeast(0))
@@ -379,6 +392,8 @@ class NovelLibraryScreenModel(
     fun showTabs() = libraryPreferences.categoryTabs()
 
     fun showNumberOfItems() = libraryPreferences.categoryNumberOfItems()
+
+    fun showHiddenCategories() = libraryPreferences.showHiddenCategories()
 
     fun showNovelDefaultCategoryDialog() {
         mutableState.update { it.copy(dialog = Dialog.SetDefaultCategory) }

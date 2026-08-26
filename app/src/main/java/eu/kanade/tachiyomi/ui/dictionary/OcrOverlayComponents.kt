@@ -286,19 +286,46 @@ fun cropAroundAnchor(
     paddingFactor: Float = 1.5f,
 ): Bitmap {
     val bw = bitmap.width.toFloat(); val bh = bitmap.height.toFloat()
-    val cx = (anchorX + anchorWidth / 2f) / bw
-    val cy = (anchorY + anchorHeight / 2f) / bh
-    val textW = anchorWidth / bw * paddingFactor
-    val textH = anchorHeight / bh * paddingFactor
-    val targetRatio = if (aspectY > 0) aspectX.toFloat() / aspectY.toFloat() else 1f
-    val cropW: Float; val cropH: Float
-    if (textW / textH > targetRatio) {
-        cropH = textH; cropW = textH * targetRatio
+    val cx = ((anchorX + anchorWidth / 2f) / bw).coerceIn(0f, 1f)
+    val cy = ((anchorY + anchorHeight / 2f) / bh).coerceIn(0f, 1f)
+    val textW = (anchorWidth / bw * paddingFactor).coerceAtLeast(0.01f)
+    val textH = (anchorHeight / bh * paddingFactor).coerceAtLeast(0.01f)
+    // Presets are pixel-space ratios; convert to normalized space so the final
+    // PIXEL dimensions match aspectX:aspectY regardless of bitmap orientation.
+    val pixelRatio = if (aspectY > 0) aspectX.toFloat() / aspectY.toFloat() else 1f
+    val normRatio = pixelRatio * bh / bw
+    var cropW: Float; var cropH: Float
+    if (textW / textH > normRatio) {
+        cropH = textH; cropW = textH * normRatio
     } else {
-        cropW = textW; cropH = textW / targetRatio
+        cropW = textW; cropH = textW / normRatio
     }
-    val halfW = (cropW / 2f).coerceAtMost(cx).coerceAtMost(1f - cx)
-    val halfH = (cropH / 2f).coerceAtMost(cy).coerceAtMost(1f - cy)
+    // Sensible size bounds while preserving ratio
+    val minSize = 0.20f
+    val maxSize = 0.80f
+    if (cropW < minSize || cropH < minSize) {
+        val scale = minSize / minOf(cropW, cropH).coerceAtLeast(0.001f)
+        cropW *= scale; cropH *= scale
+    }
+    if (cropW > maxSize || cropH > maxSize) {
+        val scale = maxSize / maxOf(cropW, cropH)
+        cropW *= scale; cropH *= scale
+    }
+    // Edge clamp preserving ratio (joint, not independent)
+    val maxHalfW = minOf(cx, 1f - cx)
+    val maxHalfH = minOf(cy, 1f - cy)
+    var halfW = cropW / 2f
+    var halfH = cropH / 2f
+    if (halfW > maxHalfW) {
+        halfW = maxHalfW
+        halfH = halfW / normRatio
+    }
+    if (halfH > maxHalfH) {
+        halfH = maxHalfH
+        halfW = halfH * normRatio
+    }
+    halfW = halfW.coerceAtMost(maxHalfW)
+    halfH = halfH.coerceAtMost(maxHalfH)
     val left = (cx - halfW).coerceAtLeast(0f)
     val top = (cy - halfH).coerceAtLeast(0f)
     val right = (cx + halfW).coerceAtMost(1f)

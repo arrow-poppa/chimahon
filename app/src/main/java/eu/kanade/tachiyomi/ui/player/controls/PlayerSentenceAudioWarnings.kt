@@ -6,6 +6,7 @@ import chimahon.anki.AnkiSentenceAudioFailure
 import chimahon.anki.AnkiSentenceAudioInputSource
 import chimahon.anki.AnkiSentenceAudioPlayableFallback
 import eu.kanade.tachiyomi.util.system.toast
+import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.i18n.kmk.KMR
 
 internal enum class PlayerSentenceAudioWarningKey {
@@ -94,8 +95,7 @@ internal fun AnkiMediaWarning.toPlayerSentenceAudioWarningKey(): PlayerSentenceA
 
 internal fun Context.showPlayerAnkiMediaWarnings(warnings: List<AnkiMediaWarning>) {
     warnings.distinct().forEach { warning ->
-        toast(
-            when (warning.toPlayerSentenceAudioWarningKey()) {
+        val message = when (warning.toPlayerSentenceAudioWarningKey()) {
                 PlayerSentenceAudioWarningKey.GENERATION_FAILED -> KMR.strings.anki_sentence_audio_generation_failed
                 PlayerSentenceAudioWarningKey.TRACK_MAPPING_UNAVAILABLE -> KMR.strings.anki_sentence_audio_track_mapping_unavailable
                 PlayerSentenceAudioWarningKey.SOURCE_UNAVAILABLE -> KMR.strings.anki_sentence_audio_source_unavailable
@@ -129,7 +129,14 @@ internal fun Context.showPlayerAnkiMediaWarnings(warnings: List<AnkiMediaWarning
                 PlayerSentenceAudioWarningKey.EXTRACTION_OUTPUT_WRITE_FAILED -> KMR.strings.anki_sentence_audio_extraction_output_write_failed
                 PlayerSentenceAudioWarningKey.EXTRACTION_TIMED_OUT -> KMR.strings.anki_sentence_audio_extraction_timed_out
                 PlayerSentenceAudioWarningKey.STORAGE_FAILED -> KMR.strings.anki_sentence_audio_storage_failed
-            },
-        )
+            }
+        val nativeError = (warning as? AnkiMediaWarning.SentenceAudioGenerationFailed)
+            ?.diagnostic?.nativeError
+            ?.takeIf(String::isNotBlank)
+        if (nativeError == null) {
+            toast(message)
+        } else {
+            toast(stringResource(message) + "\n\nFFmpeg:\n$nativeError")
+        }
     }
 }

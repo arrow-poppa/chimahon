@@ -162,6 +162,14 @@ android {
                 "META-INF/versions/9/OSGI-INF/MANIFEST.MF",
             )
         }
+        jniLibs {
+            // LiteRT natives are downloaded at runtime, not bundled in the APK
+            excludes += setOf(
+                "**/libLiteRt.so",
+                "**/libLiteRtClGlAccelerator.so",
+                "**/liblitert_jni.so",
+            )
+        }
     }
 
     dependenciesInfo {
@@ -358,7 +366,6 @@ dependencies {
     implementation(libs.aniyomi.mpv)
     implementation(libs.seeker)
     implementation(libs.ffmpeg.kit)
-    implementation(libs.libavif)
     implementation(libs.smart.exception.java)
     implementation(libs.mediasession)
     implementation(libs.truetypeparser)

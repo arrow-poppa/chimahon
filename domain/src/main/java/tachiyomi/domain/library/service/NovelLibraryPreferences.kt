@@ -23,6 +23,8 @@ class NovelLibraryPreferences(
 
     fun categoryNumberOfItems() = preferenceStore.getBoolean("display_novel_number_of_items", false)
 
+    fun showHiddenCategories() = preferenceStore.getBoolean("hide_novel_hidden_categories", false)
+
     fun defaultCategory() = preferenceStore.getString(NOVEL_DEFAULT_CATEGORY_PREF_KEY, "")
 
     companion object {

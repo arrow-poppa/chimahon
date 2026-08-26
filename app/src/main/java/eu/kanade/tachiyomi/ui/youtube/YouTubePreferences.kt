@@ -22,6 +22,7 @@ class YouTubePreferences(context: Context) {
         const val KEY_QUALITY = "preferred_quality"
         const val KEY_ADD_NEW_CHANNELS_TO_LIBRARY = "add_new_channels_to_library"
 
+        const val QUALITY_4320P = "4320p"
         const val QUALITY_2160P = "2160p"
         const val QUALITY_1440P = "1440p"
         const val QUALITY_1080P = "1080p"
@@ -31,6 +32,7 @@ class YouTubePreferences(context: Context) {
         const val DEFAULT_QUALITY = QUALITY_1080P
 
         val QUALITIES = listOf(
+            QUALITY_4320P,
             QUALITY_2160P,
             QUALITY_1440P,
             QUALITY_1080P,

@@ -27,6 +27,7 @@ Chimahon is a specialized Android reader designed for language learners and imme
 ### 📖 Novel & Manga Support
 - **Novel Reader**: E-book reader with inline dictionary lookup and an illustration viewer for art OCR and vocabulary mining.
 - **Manga Reader**: Native reading experience with support for all major online and local sources.
+- **Panel-by-Panel Navigation**: AI-driven comic panel detection and smart panel-by-panel reading navigation powered by LiteRT.
 - **Local OCR**: High-performance, on-device text recognition — no internet connection required.
 - **.mokuro Support**: Native integration for reading `.mokuro` formatted manga files with pre-rendered OCR overlays.
 
@@ -92,6 +93,7 @@ Chimahon retains all the features of **Komikku** and **Mihon**:
 - [Yomitan](https://github.com/yomidevs/yomitan): Inspiration for language-processing workflows.
 - [owocr](https://github.com/AuroraWright/owocr): Base for OCR merge and reconstruction logic.
 - [hoshidicts](https://github.com/Manhhao/hoshidicts/): Native dictionary engine powering our lookups.
+- [manga-panel-detector-yolo26n](https://huggingface.co/leoxs22/manga-panel-detector-yolo26n) by [@leoxs22](https://huggingface.co/leoxs22): YOLO model powering panel-by-panel navigation and speech bubble detection.
 - [Machita Chima (町田ちま)](https://www.youtube.com/channel/UCo7TRj3cS-f_1D9ZDmuTsjw): App name inspiration.
 
 ### License

@@ -34,8 +34,8 @@ import androidx.compose.material.icons.automirrored.outlined.Label
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.FileDownload
-import androidx.compose.material.icons.outlined.FileUpload
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.Upload
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.AlertDialog
@@ -108,6 +108,7 @@ import kotlinx.coroutines.withContext
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.domain.library.model.LibraryDisplayMode
 import tachiyomi.i18n.MR
+import tachiyomi.i18n.kmk.KMR
 import tachiyomi.i18n.sy.SYMR
 import tachiyomi.presentation.core.components.CheckboxItem
 import tachiyomi.presentation.core.components.FastScrollLazyColumn
@@ -272,7 +273,8 @@ fun Screen.NovelLibraryScreen(
                             context.toast(SYMR.strings.sync_in_progress)
                         }
                     },
-                    onClickSyncNow = { syncAllTtuBooks() },
+                    onClickSyncNow = null,
+                    onClickSyncTtu = { syncAllTtuBooks() }.takeIf { ttuSyncManager?.isEnabled == true },
                 onClickGlobalUpdate = null,
                 onClickOpenRandomManga = {
                     val randomBook = screenModel.getRandomBookForCurrentCategory()
@@ -282,7 +284,7 @@ fun Screen.NovelLibraryScreen(
                     }
                 },
                 onClickSyncExh = null,
-                isSyncEnabled = true,
+                isSyncEnabled = false,
                 searchQuery = state.searchQuery,
                 onSearchQueryChange = screenModel::search,
                 scrollBehavior = scrollBehavior,
@@ -763,6 +765,10 @@ fun Screen.NovelLibraryScreen(
                                 pref = screenModel.showTabs(),
                             )
                             CheckboxItem(
+                                label = stringResource(KMR.strings.action_show_hidden_categories),
+                                pref = screenModel.showHiddenCategories(),
+                            )
+                            CheckboxItem(
                                 label = stringResource(MR.strings.action_display_show_number_of_items),
                                 pref = screenModel.showNumberOfItems(),
                             )
@@ -880,7 +886,7 @@ fun NovelLibraryContent(
                         name = name,
                         order = it.order.toLong(),
                         flags = it.flags,
-                        hidden = false,
+                        hidden = it.hidden,
                     )
                 },
                 pagerState = pagerState,
@@ -1194,7 +1200,7 @@ fun NovelLibraryBottomActionMenu(
                                     expanded = false
                                     onSyncImport()
                                 },
-                                leadingIcon = { Icon(Icons.Outlined.FileDownload, null) },
+                                leadingIcon = { Icon(Icons.Outlined.Download, null) },
                             )
                             DropdownMenuItem(
                                 text = { Text("Export to Drive") },
@@ -1202,7 +1208,7 @@ fun NovelLibraryBottomActionMenu(
                                     expanded = false
                                     onSyncExport()
                                 },
-                                leadingIcon = { Icon(Icons.Outlined.FileUpload, null) },
+                                leadingIcon = { Icon(Icons.Outlined.Upload, null) },
                             )
                             DropdownMenuItem(
                                 text = { Text("Auto") },

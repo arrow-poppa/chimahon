@@ -4,6 +4,62 @@ All notable changes to Chimahon are documented here.
 
 The format follows a Keep a Changelog style and uses Semantic Versioning.
 
+## [v2.3.4]
+
+### Added
+- Separate language filter for anime extensions and sources, independent from manga
+
+### Changed
+- Player gesture settings renamed and clarified to match Anikku
+- Updated mpv/ffmpeg builds with improved sentence audio and animated AVIF mining
+- Clearer error details when sentence audio capture fails
+
+### Fixed
+- YouTube videos stuck at low quality even when higher resolutions were available
+- Dictionary floating button going off-screen after rotating the screen
+- Screen lookup crop presets not producing correct crops
+- Panel detection crashing while the AI model was still downloading
+- Anki single-glossary options not showing sometimes
+- Crash when loading cover colors in the background
+- Discord presence crashing when it starts
+- About screen crash when the app is backgrounded
+- Picture-in-picture popups crashing when they don't fit the window
+
+## [v2.3.3]
+
+### Added
+- Panel-by-panel navigation with runtime AI model detection
+- Dedicated OCR settings screen with categorized sections (engine, boxes, overlay, behavior, cache)
+- Active text and background opacity controls for OCR overlay
+- Dynamic "App" theme option for dictionary popup
+- Compact glossaries layout option for dictionary popup
+- Reset button in custom theme palette personalizer
+- Novel reading statistics autostart setting (Off / On open / On page turn)
+- Library sync button in anime library toolbar
+- Category visibility controls for novels and anime in library
+- `selected-glossary-no-fallback` marker for Anki export templates
+- Tap-to-retry action for failed items in the OCR processing queue
+
+### Changed
+- History tab reselect now resumes the most recently viewed media across anime and manga
+- Screen lookup launch no longer triggers background library sync
+- Two-finger tap OCR gesture in reader disabled by default
+- Cached Anki duplicate card IDs to open and edit existing cards instantly
+- Aligned OCR queue item title hierarchy with download queue items
+
+### Fixed
+- OCR on download failing or getting stuck during processing, with automatic retries for failed chapters
+- Subtitle lookup popup positioned above full subtitle text block in player
+- Anime player subtitle swipe controls (swipe up to replay subtitle, swipe down to toggle visibility)
+- Subtitle timing accuracy and seek precision in anime player
+- Reader settings page now shows flash delay and scroll-flash options
+- 4-side E-Ink outer border for dictionary lookup popup
+- Anki return-to-app behavior after opening a card
+- UI icon text overlap in Data and Storage settings screen
+- SAF read-only access for animated AVIF scene mining in player
+- Restored manga "Sync library" toolbar label and gated novel TTU background sync
+- Excluded E-Ink mode and screen flash toggle settings from backup and sync to keep them device-local
+
 ## [v2.3.2]
 
 ### Added

@@ -14,6 +14,15 @@ fun Uri.toFFmpegString(context: Context): String {
     return raw?.replace("\"", "\\\"") ?: ""
 }
 
+fun Uri.toFFmpegReadString(context: Context): String {
+    val raw = if (this.scheme == "content") {
+        FFmpegKitConfig.getSafParameterForRead(context, this) ?: this.path
+    } else {
+        this.path
+    }
+    return raw?.replace("\"", "\\\"") ?: ""
+}
+
 fun UniFile.toFFmpegString(context: Context? = null): String {
     val raw = if (context != null && this.uri.scheme == "content") {
         FFmpegKitConfig.getSafParameter(context, this.uri, "rw") ?: this.filePath

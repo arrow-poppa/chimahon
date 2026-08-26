@@ -101,6 +101,14 @@ class NovelCategoryScreenModel(
         }
     }
 
+    fun hideCategory(category: NovelCategory) {
+        if (category.isSystemCategory) return
+        screenModelScope.launch {
+            categoryStorage.setCategoryHidden(category.id, !category.hidden)
+            loadCategories()
+        }
+    }
+
     fun showDialog(dialog: NovelCategoryDialog) {
         mutableState.update {
             when (it) {

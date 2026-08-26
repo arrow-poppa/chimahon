@@ -68,6 +68,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.canopus.chimareader.data.CustomReaderTheme
 import com.canopus.chimareader.data.FontManager
+import com.canopus.chimareader.data.StatisticsAutostartMode
 import com.canopus.chimareader.data.Theme
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -659,6 +660,27 @@ fun AppearanceSheet(
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+            }
+
+            // Statistics
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Statistics", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                val statsOptions = listOf(
+                    StatisticsAutostartMode.OFF to "Off",
+                    StatisticsAutostartMode.ON to "On open",
+                    StatisticsAutostartMode.PAGETURN to "On page turn",
+                )
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    statsOptions.forEachIndexed { index, (mode, label) ->
+                        SegmentedButton(
+                            selected = viewModel.statisticsAutostartMode == mode,
+                            onClick = { viewModel.updateStatisticsAutostartMode(mode) },
+                            shape = SegmentedButtonDefaults.itemShape(index = index, count = statsOptions.size),
+                        ) {
+                            Text(label)
                         }
                     }
                 }

@@ -44,6 +44,7 @@ import cafe.adriel.voyager.core.screen.Screen
 import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.library.anime.AnimeLibraryUpdateJob
+import eu.kanade.tachiyomi.data.sync.SyncDataJob
 import eu.kanade.tachiyomi.ui.browse.animesource.globalsearch.GlobalAnimeSearchScreen
 import eu.kanade.tachiyomi.ui.category.CategoryScreen
 import eu.kanade.tachiyomi.ui.entries.anime.library.AnimeLibraryScreenModel
@@ -51,6 +52,7 @@ import eu.kanade.tachiyomi.ui.entries.anime.library.AnimeLibrarySettingsScreenMo
 import eu.kanade.tachiyomi.ui.home.HomeScreen
 import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.ui.player.PlayerActivity
+import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collectLatest
@@ -63,6 +65,7 @@ import tachiyomi.domain.entries.anime.model.Anime
 import tachiyomi.domain.episode.model.Episode
 import tachiyomi.domain.library.model.LibraryAnime
 import tachiyomi.i18n.MR
+import tachiyomi.i18n.sy.SYMR
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.screens.EmptyScreen
@@ -165,9 +168,15 @@ fun Screen.AnimeLibraryPanel(
                         }
                     }
                 },
-                onClickSyncNow = null,
+                onClickSyncNow = {
+                    if (!SyncDataJob.isRunning(context)) {
+                        SyncDataJob.startNow(context, manual = true)
+                    } else {
+                        context.toast(SYMR.strings.sync_in_progress)
+                    }
+                },
                 onClickSyncExh = null,
-                isSyncEnabled = false,
+                isSyncEnabled = state.isSyncEnabled,
                 searchQuery = state.searchQuery,
                 onSearchQueryChange = screenModel::search,
                 scrollBehavior = scrollBehavior.takeIf { !tabVisible },

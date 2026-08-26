@@ -23,6 +23,7 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DragHandle
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Pause
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -303,6 +304,7 @@ object DownloadQueueScreen : Screen() {
                     OcrQueueSection(
                         ocrQueue = ocrQueue,
                         onCancelClick = { screenModel.cancelOcr(it) },
+                        onRetryClick = { screenModel.retryOcr(it) },
                         modifier = Modifier
                             .then(
                                 if (downloadList.isEmpty()) Modifier.weight(1f)
@@ -403,6 +405,7 @@ object DownloadQueueScreen : Screen() {
 private fun OcrQueueSection(
     ocrQueue: List<OcrQueueItem>,
     onCancelClick: (Long) -> Unit,
+    onRetryClick: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
@@ -432,6 +435,7 @@ private fun OcrQueueSection(
                 OcrQueueItemRow(
                     item = item,
                     onCancelClick = { onCancelClick(item.chapter.id) },
+                    onRetryClick = { onRetryClick(item.chapter.id) },
                 )
             }
         }
@@ -442,13 +446,14 @@ private fun OcrQueueSection(
 private fun OcrQueueItemRow(
     item: OcrQueueItem,
     onCancelClick: () -> Unit,
+    onRetryClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             imageVector = Icons.Outlined.DragHandle,
@@ -459,13 +464,13 @@ private fun OcrQueueItemRow(
 
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = item.chapter.name,
+                text = item.manga.title,
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = item.manga.title,
+                text = item.chapter.name,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -523,11 +528,13 @@ private fun OcrQueueItemRow(
                     )
                 }
                 OcrQueueStatus.ERROR -> {
-                    Icon(
-                        imageVector = Icons.Outlined.ErrorOutline,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                    )
+                    IconButton(onClick = onRetryClick) {
+                        Icon(
+                            imageVector = Icons.Outlined.ErrorOutline,
+                            contentDescription = stringResource(MR.strings.action_retry),
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                    }
                 }
                 OcrQueueStatus.CANCELLED -> {
                     Icon(
@@ -538,7 +545,6 @@ private fun OcrQueueItemRow(
                 }
             }
         }
-
         if (item.status in
             listOf(
                 OcrQueueStatus.PENDING,

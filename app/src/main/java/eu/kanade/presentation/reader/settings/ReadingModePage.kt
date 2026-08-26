@@ -142,6 +142,11 @@ private fun PagerViewerSettings(screenModel: ReaderSettingsScreenModel) {
         pref = screenModel.preferences.navigateToPan(),
     )
 
+    CheckboxItem(
+        label = stringResource(MR.strings.pref_panel_navigation),
+        pref = screenModel.preferences.panelNavigation(),
+    )
+
     val dualPageSplitPaged by screenModel.preferences.dualPageSplitPaged().collectAsState()
     CheckboxItem(
         label = stringResource(MR.strings.pref_dual_page_split),

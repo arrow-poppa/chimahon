@@ -1360,18 +1360,24 @@ class ReaderActivity : BaseActivity() {
         val ocrBoxScaleX by dictionaryPreferences.ocrBoxScaleX().collectAsState()
         val ocrBoxScaleY by dictionaryPreferences.ocrBoxScaleY().collectAsState()
         val ocrBoxOpacity by dictionaryPreferences.ocrBoxOpacity().collectAsState()
+        val activeOcrTextOpacity by dictionaryPreferences.activeOcrTextOpacity().collectAsState()
+        val activeOcrBgOpacity by dictionaryPreferences.activeOcrBgOpacity().collectAsState()
 
-        LaunchedEffect(state.viewer, ocrOutlineVisible, ocrBoxScaleX, ocrBoxScaleY, ocrBoxOpacity) {
+        LaunchedEffect(state.viewer, ocrOutlineVisible, ocrBoxScaleX, ocrBoxScaleY, ocrBoxOpacity, activeOcrTextOpacity, activeOcrBgOpacity) {
             when (val viewer = state.viewer) {
                 is PagerViewer -> {
                     viewer.setOcrOutlineVisible(ocrOutlineVisible)
                     viewer.setOcrBoxScale(ocrBoxScaleX, ocrBoxScaleY)
                     viewer.setOcrBoxOpacity(ocrBoxOpacity)
+                    viewer.setActiveOcrTextOpacity(activeOcrTextOpacity)
+                    viewer.setActiveOcrBgOpacity(activeOcrBgOpacity)
                 }
                 is WebtoonViewer -> {
                     viewer.setOcrOutlineVisible(ocrOutlineVisible)
                     viewer.setOcrBoxScale(ocrBoxScaleX, ocrBoxScaleY)
                     viewer.setOcrBoxOpacity(ocrBoxOpacity)
+                    viewer.setActiveOcrTextOpacity(activeOcrTextOpacity)
+                    viewer.setActiveOcrBgOpacity(activeOcrBgOpacity)
                 }
             }
         }
@@ -2396,12 +2402,20 @@ class ReaderActivity : BaseActivity() {
                 file,
             )
 
+            val preset = (cachedActiveProfile ?: Injekt.get<DictionaryPreferences>().profileStore.getActiveProfile())
+                .let { CropPresets.aspectByKey(it.ankiCropPreset) }
             val cropOptions = com.canhub.cropper.CropImageOptions().apply {
                 cropShape = com.canhub.cropper.CropImageView.CropShape.RECTANGLE
                 initialCropWindowPaddingRatio = 0.25f
-                fixAspectRatio = false
-                aspectRatioX = 1
-                aspectRatioY = 1
+                if (preset != null) {
+                    fixAspectRatio = true
+                    aspectRatioX = preset.x
+                    aspectRatioY = preset.y
+                } else {
+                    fixAspectRatio = false
+                    aspectRatioX = 1
+                    aspectRatioY = 1
+                }
                 outputCompressQuality = 70
                 outputCompressFormat = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                     android.graphics.Bitmap.CompressFormat.WEBP_LOSSY

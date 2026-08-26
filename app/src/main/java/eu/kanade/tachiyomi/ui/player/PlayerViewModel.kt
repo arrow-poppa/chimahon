@@ -74,11 +74,12 @@ import eu.kanade.tachiyomi.ui.player.controls.components.sheets.HosterState
 import eu.kanade.tachiyomi.ui.player.controls.components.sheets.getChangedAt
 import eu.kanade.tachiyomi.ui.player.loader.EpisodeLoader
 import eu.kanade.tachiyomi.ui.player.loader.HosterLoader
+import eu.kanade.tachiyomi.ui.player.mining.MediaCaptureService
+import eu.kanade.tachiyomi.ui.player.mining.SentenceAudioMpvPropertyReader
+import eu.kanade.tachiyomi.ui.player.mining.SentenceAudioMpvSnapshotReader
 import eu.kanade.tachiyomi.ui.player.settings.GesturePreferences
 import eu.kanade.tachiyomi.ui.player.settings.PlayerPreferences
 import eu.kanade.tachiyomi.ui.player.settings.SubtitlePreferences
-import eu.kanade.tachiyomi.ui.player.sentenceaudio.SentenceAudioMpvPropertyReader
-import eu.kanade.tachiyomi.ui.player.sentenceaudio.SentenceAudioMpvSnapshotReader
 import eu.kanade.tachiyomi.ui.youtube.YouTubePreferences
 import eu.kanade.tachiyomi.ui.youtube.YouTubeResolver
 import eu.kanade.tachiyomi.ui.youtube.allowsExternalSubtitleLookup
@@ -160,8 +161,6 @@ import kotlin.collections.first
 import kotlin.coroutines.cancellation.CancellationException
 
 private const val MAX_SUBTITLE_HISTORY = 120
-private const val MAX_SCENE_DIMENSION = 640
-private const val SCENE_DIMENSION_ALIGNMENT = 16
 private const val VIDEO_SELECTION_DELIMITER = "\u001e"
 class PlayerViewModelProviderFactory(
     private val activity: PlayerActivity,
@@ -355,7 +354,7 @@ class PlayerViewModel @JvmOverloads constructor(
 
     val cachePath: String = activity.cacheDir.path
 
-    internal val mediaCapture = PlayerMediaCaptureService(
+    internal val mediaCapture = MediaCaptureService(
         context = activity,
         cachePath = cachePath,
         getVideo = { currentVideo.value },
@@ -1417,6 +1416,19 @@ class PlayerViewModel @JvmOverloads constructor(
 
         seekTo(target.effectiveStartSeconds(delaySeconds, speed).coerceAtLeast(0.0))
         _activeSubtitleCueIndex.update { target.index }
+    }
+
+    fun replayCurrentSubtitle() {
+        val currentCue = activeSubtitleCueIndex.value?.let { activeCueIndex ->
+            subtitleHistory.value.firstOrNull { it.index == activeCueIndex }
+        }
+        if (currentCue == null) {
+            MPVLib.command(arrayOf("sub-seek", "0", "primary"))
+            return
+        }
+
+        seekTo(currentCue.effectiveStartSeconds().coerceAtLeast(0.0))
+        _activeSubtitleCueIndex.update { currentCue.index }
     }
 
     fun setSubtitlesVisible(visible: Boolean) {
@@ -2535,9 +2547,10 @@ class PlayerViewModel @JvmOverloads constructor(
 
     private fun selectYouTubeStream(streams: List<Video>, targetQuality: String): Video {
         val targetPixels = YouTubeResolver.parseResolution(targetQuality)
-        return streams.filter { YouTubeResolver.parseResolution(it.videoTitle) <= targetPixels }
+        return streams.filter { YouTubeResolver.parseResolution(it.videoTitle) in 1..targetPixels }
             .maxByOrNull { YouTubeResolver.parseResolution(it.videoTitle) }
-            ?: streams.minByOrNull { YouTubeResolver.parseResolution(it.videoTitle) }
+            ?: streams.filter { YouTubeResolver.parseResolution(it.videoTitle) > 0 }
+                .minByOrNull { YouTubeResolver.parseResolution(it.videoTitle) }
             ?: streams.first()
     }
 
@@ -3116,13 +3129,18 @@ class PlayerViewModel @JvmOverloads constructor(
         val subtitleFlag = if (showSubtitles) "subtitles" else "video"
 
         MPVLib.command(arrayOf("screenshot-to-file", filename, subtitleFlag))
-        val tempFile = File(filename).takeIf { it.exists() } ?: return null
+        val tempFile = File(filename).takeIf { it.exists() && it.length() > 0L }
+            ?: return fallbackScreenshotStream()
         val newFile = File("$cachePath/mpv_screenshot.png")
 
         newFile.delete()
         tempFile.renameTo(newFile)
         return newFile.takeIf { it.exists() }?.inputStream()
+            ?: fallbackScreenshotStream()
     }
+
+    private fun fallbackScreenshotStream(): InputStream? =
+        runBlocking { mediaCapture.captureScreenshotStreamViaFfmpeg() }
 
     suspend fun captureVideoFrameForOcr(): Bitmap? = mediaCapture.captureVideoFrameForOcr()
 

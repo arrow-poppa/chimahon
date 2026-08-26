@@ -697,8 +697,11 @@ object SettingsDataScreen : SearchableSettings {
                                         },
                                         shape = SegmentedButtonDefaults.itemShape(0, 2),
                                     ) {
-                                        Icon(Icons.Outlined.FileDownload, null)
-                                        Text(stringResource(MR.strings.pref_dictionary_import))
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Outlined.FileDownload, null)
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(stringResource(MR.strings.pref_dictionary_import))
+                                        }
                                     }
                                     SegmentedButton(
                                         modifier = Modifier.fillMaxHeight(),
@@ -717,8 +720,11 @@ object SettingsDataScreen : SearchableSettings {
                                         },
                                         shape = SegmentedButtonDefaults.itemShape(1, 2),
                                     ) {
-                                        Icon(Icons.Outlined.FileUpload, null)
-                                        Text(stringResource(MR.strings.pref_dictionary_export))
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Outlined.FileUpload, null)
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(stringResource(MR.strings.pref_dictionary_export))
+                                        }
                                     }
                                 }
 

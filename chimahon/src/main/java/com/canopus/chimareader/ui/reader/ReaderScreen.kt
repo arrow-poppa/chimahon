@@ -255,7 +255,10 @@ fun ReaderScreen(
                         onSentenceReady = onSentenceReady,
                         onInternalLinkClicked = { viewModel.jumpToUrl(it) },
                         onSelectionRectsReceived = onSelectionRectsReceived,
-                        onPageTurned = { if (viewModel.einkRefreshOnPageTurn) einkRefreshHost.trigger() },
+                        onPageTurned = {
+                            viewModel.onPageTurned()
+                            if (viewModel.einkRefreshOnPageTurn) einkRefreshHost.trigger()
+                        },
                         onScrollMoved = { if (viewModel.einkRefreshOnScroll) einkRefreshHost.triggerScroll() },
                         onImageTapped = { uri -> tappedImageUri = uri },
                     )

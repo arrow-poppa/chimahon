@@ -106,6 +106,8 @@ class AnimeLibraryPreferences(
         false,
     )
 
+    fun showHiddenCategories() = preferenceStore.getBoolean("hide_anime_hidden_categories", false)
+
     fun categorizedDisplaySettings() = preferenceStore.getBoolean(
         "anime_categorized_display",
         false,

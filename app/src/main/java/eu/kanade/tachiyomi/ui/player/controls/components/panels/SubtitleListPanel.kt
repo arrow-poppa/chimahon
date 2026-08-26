@@ -65,7 +65,7 @@ private fun SubtitleSideList(
 ) {
     val configuration = LocalConfiguration.current
     val width = (configuration.screenWidthDp.dp * 0.34f)
-        .coerceIn(280.dp, minOf(430.dp, configuration.screenWidthDp.dp - 24.dp))
+        .coerceAtLeast(280.dp).coerceAtMost(minOf(430.dp, configuration.screenWidthDp.dp - 24.dp))
 
     SubtitleCueLazyList(
         cues = cues,

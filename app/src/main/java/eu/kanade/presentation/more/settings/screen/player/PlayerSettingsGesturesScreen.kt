@@ -117,6 +117,7 @@ object PlayerSettingsGesturesScreen : SearchableSettings {
                 Preference.PreferenceItem.SwitchPreference(
                     preference = enableHorizontalSeekGesture,
                     title = stringResource(MR.strings.enable_horizontal_seek_gesture),
+                    subtitle = stringResource(MR.strings.pref_player_gesture_h_seek_summary),
                     enabled = !subtitleSwipeControlsEnabled,
                 ),
                 Preference.PreferenceItem.SwitchPreference(

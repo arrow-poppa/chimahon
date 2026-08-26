@@ -9,6 +9,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -17,14 +18,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import chimahon.DictionaryStyle
 import chimahon.LookupResult
 import eu.kanade.domain.ui.UiPreferences
-import eu.kanade.presentation.theme.colorscheme.*
 import tachiyomi.presentation.core.util.collectAsState
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -70,24 +69,49 @@ fun DictionaryEntryWebView(
     val context = LocalContext.current
     val dictionaryPreferences = remember { Injekt.get<DictionaryPreferences>() }
     val themeMode by dictionaryPreferences.themeMode().collectAsState()
+    val compactGlossary by dictionaryPreferences.compactGlossary().collectAsState()
     val customColor by dictionaryPreferences.customColor().collectAsState()
 
     val prefs = remember { Injekt.get<DictionaryPreferences>() }
     val uiPreferences = remember { Injekt.get<UiPreferences>() }
     val fontFamily by prefs.fontFamily().collectAsState()
-    val seedColor = if (customColor == 0 || forceDefaultTheme) uiPreferences.colorTheme().get() else customColor
+    val eInkMode by prefs.eInkMode().collectAsState()
+    val paginatedScrolling by prefs.paginatedScrolling().collectAsState()
+    val appAmoled by uiPreferences.themeDarkAmoled().collectAsState()
+    val appThemeMode by uiPreferences.themeMode().collectAsState()
+    val appColorTheme by uiPreferences.colorTheme().collectAsState()
 
     val systemIsDark = isSystemInDarkTheme()
-    val isAmoled = themeMode == "pure_black"
-    val isDark = remember(seedColor, customColor, systemIsDark, forceDefaultTheme, themeMode) {
-        when (themeMode) {
-            "dark", "pure_black" -> true
-            "light" -> false
-            else -> if (customColor != 0 && !forceDefaultTheme) Color(seedColor).luminance() < 0.5f else systemIsDark
-        }
+    val resolvedTheme = remember(
+        themeMode,
+        customColor,
+        eInkMode,
+        forceDefaultTheme,
+        systemIsDark,
+        appThemeMode,
+        appAmoled,
+        appColorTheme,
+    ) {
+        resolveDictionaryTheme(
+            themeMode = themeMode,
+            customColor = customColor,
+            eInkMode = eInkMode,
+            forceDefaultTheme = forceDefaultTheme,
+            systemIsDark = systemIsDark,
+            appThemeMode = appThemeMode,
+            appAmoled = appAmoled,
+            appColorTheme = appColorTheme,
+        )
     }
-    val colorScheme = remember(isDark, isAmoled, seedColor) {
-        getDictionaryColorScheme(isDark, isAmoled, seedColor)
+    val isDark = resolvedTheme.isDark
+    val isAmoled = resolvedTheme.isAmoled
+    val seedColor = resolvedTheme.seedColor
+    val colorScheme = if (resolvedTheme.useAppTheme) {
+        MaterialTheme.colorScheme
+    } else {
+        remember(isDark, isAmoled, seedColor) {
+            getDictionaryColorScheme(isDark, isAmoled, seedColor)
+        }
     }
     val BgColor = remember(isDark, isAmoled, seedColor, colorScheme) {
         if (isAmoled && isDark) Color.Black else colorScheme.surface
@@ -96,8 +120,6 @@ fun DictionaryEntryWebView(
     val effectiveWordAudioAutoplay = wordAudioAutoplayOverride ?: wordAudioAutoplay
     val configuredShowNavigationButtons by prefs.showNavigationButtons().collectAsState()
     val showNavigationButtons = showNavigationButtonsOverride ?: configuredShowNavigationButtons
-    val eInkMode by prefs.eInkMode().collectAsState()
-    val paginatedScrolling by prefs.paginatedScrolling().collectAsState()
     val paginatedScrollStepSize by prefs.paginatedScrollStepSize().collectAsState()
     val scrollBehavior by prefs.scrollBehavior().collectAsState()
 
@@ -107,7 +129,7 @@ fun DictionaryEntryWebView(
         showPitchDiagram, showPitchNumber, showPitchText,
         activeProfile, tabs, recursiveNavMode, wordAudioEnabled,
         effectiveWordAudioAutoplay, showNavigationButtons, groupPitches,
-        renderRecursiveChrome, entryJsons,
+        renderRecursiveChrome, entryJsons, compactGlossary,
     ) {
         DictionaryRenderSignature(
             results = results, styles = styles, placeholder = placeholder, isDark = isDark,
@@ -139,6 +161,7 @@ fun DictionaryEntryWebView(
                 wordAudioEnabled = wordAudioEnabled,
                 showNavigationButtons = showNavigationButtons,
                 groupPitches = groupPitches,
+                compactGlossary = compactGlossary,
             )
             val entries = entryJsons ?: buildResultEntryJsonStrings(results, activeProfile, context, groupPitches)
             config.toString() to entries
@@ -151,11 +174,12 @@ fun DictionaryEntryWebView(
         entryJsonsPair = builtEntryJsons to renderSignature
     }
 
-    val bootstrapHtml = remember(context, isDark, isAmoled, seedColor, colorScheme, fontFamily, eInkMode, paginatedScrolling, paginatedScrollStepSize, scrollBehavior, activeProfile.languageCode) {
+    val bootstrapHtml = remember(context, isDark, isAmoled, seedColor, colorScheme, fontFamily, eInkMode, paginatedScrolling, paginatedScrollStepSize, scrollBehavior, activeProfile.languageCode, compactGlossary) {
         getDictionaryBootstrapHtml(
             context = context, colorScheme = colorScheme, isDark = isDark,
             isAmoled = isAmoled, seedColor = seedColor, fontFamily = fontFamily,
             eInkMode = eInkMode, paginatedScrolling = paginatedScrolling, paginatedScrollStepSize = paginatedScrollStepSize, scrollBehavior = scrollBehavior, languageCode = activeProfile.languageCode,
+            compactGlossary = compactGlossary,
         )
     }
 

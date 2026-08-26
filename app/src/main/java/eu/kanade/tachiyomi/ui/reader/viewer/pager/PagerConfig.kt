@@ -47,6 +47,9 @@ class PagerConfig(
     var navigateToPan = false
         private set
 
+    var panelNavigation = false
+        private set
+
     var landscapeZoom = false
         private set
 
@@ -111,6 +114,9 @@ class PagerConfig(
 
         readerPreferences.navigateToPan()
             .register({ navigateToPan = it })
+
+        readerPreferences.panelNavigation()
+            .register({ panelNavigation = it })
 
         readerPreferences.landscapeZoom()
             .register({ landscapeZoom = it }, { imagePropertyChangedListener?.invoke() })

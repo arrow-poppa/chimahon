@@ -23,6 +23,11 @@ class SourcePreferences(
 
     fun enabledLanguages() = preferenceStore.getStringSet("source_languages", LocaleHelper.getDefaultEnabledLanguages())
 
+    fun enabledAnimeLanguages() = preferenceStore.getStringSet(
+        "anime_source_languages",
+        LocaleHelper.getDefaultEnabledLanguages(),
+    )
+
     fun disabledSources() = preferenceStore.getStringSet("hidden_catalogues", emptySet())
 
     fun incognitoExtensions() = preferenceStore.getStringSet("incognito_extensions", emptySet())

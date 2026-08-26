@@ -352,7 +352,11 @@ class MangaCoverFetcher(
     ) {
         if (!preloadLibraryColor) return
         scope.launch {
-            MangaCoverMetadata.setRatioAndColors(mangaCover, bufferedSource, ogFile, onlyFavorite, force)
+            try {
+                MangaCoverMetadata.setRatioAndColors(mangaCover, bufferedSource, ogFile, onlyFavorite, force)
+            } catch (e: Exception) {
+                logcat(LogPriority.WARN, e) { "Failed to set cover ratio & colors: ${e.message}" }
+            }
         }
     }
     // KMK <--

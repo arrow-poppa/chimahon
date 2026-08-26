@@ -121,14 +121,14 @@ class NovelCategoryScreen : Screen() {
                                 name = categoryName,
                                 order = category.order.toLong(),
                                 flags = category.flags,
-                                hidden = false
+                                hidden = category.hidden
                             )
                             CategoryListItem(
                                 modifier = Modifier.animateItem(),
                                 category = mappedCategory,
                                 onRename = { screenModel.showDialog(NovelCategoryDialog.Rename(category)) },
                                 onDelete = { screenModel.showDialog(NovelCategoryDialog.Delete(category)) },
-                                onHide = { /* Not supported for novels yet */ },
+                                onHide = { screenModel.hideCategory(category) },
                             )
                         }
                     }

@@ -45,4 +45,7 @@ dependencies {
     implementation(kotlinx.serialization.protobuf)
 
     api(libs.bundles.sqldelight)
+
+    implementation(libs.litert)
+    implementation(androidx.corektx)
 }

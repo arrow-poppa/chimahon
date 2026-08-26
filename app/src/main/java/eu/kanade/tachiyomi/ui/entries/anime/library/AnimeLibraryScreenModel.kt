@@ -5,6 +5,7 @@ import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import eu.kanade.core.preference.PreferenceMutableState
 import eu.kanade.core.preference.asState
+import eu.kanade.domain.sync.SyncPreferences
 import eu.kanade.presentation.entries.DownloadAction
 import eu.kanade.presentation.library.components.LibraryToolbarTitle
 import eu.kanade.tachiyomi.animesource.model.SAnime
@@ -80,6 +81,7 @@ class AnimeLibraryScreenModel(
     private val coverCache: AnimeCoverCache = Injekt.get(),
     private val backgroundCache: AnimeBackgroundCache = Injekt.get(),
     private val trackerManager: TrackerManager = Injekt.get(),
+    private val syncPreferences: SyncPreferences = Injekt.get(),
 ) : StateScreenModel<AnimeLibraryScreenModel.State>(
     State(activeCategoryIndex = preferences.lastUsedCategory().get()),
 ) {
@@ -99,6 +101,7 @@ class AnimeLibraryScreenModel(
                 preferences.filterFillermarked().changes(),
                 preferences.groupLibraryBy().changes(),
                 preferences.categorizedDisplaySettings().changes(),
+                preferences.showHiddenCategories().changes(),
                 getTracksPerAnime.subscribe(),
                 getTrackingFiltersFlow(),
             ) { values ->
@@ -116,10 +119,11 @@ class AnimeLibraryScreenModel(
                 val filterFillermarked = values[9] as TriState
                 val groupType = values[10] as Int
                 val categorizedDisplaySettings = values[11] as Boolean
+                val showHiddenCategories = values[12] as Boolean
                 @Suppress("UNCHECKED_CAST")
-                val trackMap = values[12] as Map<Long, List<AnimeTrack>>
+                val trackMap = values[13] as Map<Long, List<AnimeTrack>>
                 @Suppress("UNCHECKED_CAST")
-                val trackingFilters = values[13] as Map<Long, TriState>
+                val trackingFilters = values[14] as Map<Long, TriState>
 
                 val items = libraryAnime.map { anime ->
                     val apiSource = sourceManager.getOrStub(anime.anime.source)
@@ -150,7 +154,7 @@ class AnimeLibraryScreenModel(
                     filterFillermarked,
                 ).let { applyTrackingFilters(it, trackMap, trackingFilters) }
 
-                val grouped = applyGrouping(filtered, categories, groupType)
+                val grouped = applyGrouping(filtered, categories, groupType, showHiddenCategories)
                 val collator = Collator.getInstance(Locale.getDefault())
                 val sorted = grouped.mapValues { (category, list) ->
                     val activeSort = if (groupType == LibraryGroup.BY_DEFAULT && categorizedDisplaySettings) {
@@ -205,6 +209,14 @@ class AnimeLibraryScreenModel(
         preferences.showContinueWatchingButton().changes()
             .onEach { show ->
                 mutableState.update { it.copy(showContinueWatchingButton = show) }
+            }
+            .launchIn(screenModelScope)
+
+        syncPreferences.syncService()
+            .changes()
+            .distinctUntilChanged()
+            .onEach { syncService ->
+                mutableState.update { it.copy(isSyncEnabled = syncService != 0) }
             }
             .launchIn(screenModelScope)
 
@@ -521,6 +533,7 @@ class AnimeLibraryScreenModel(
         items: List<AnimeLibraryItem>,
         categories: List<AnimeCategory>,
         groupType: Int,
+        showHiddenCategories: Boolean,
     ): Map<AnimeCategory, List<AnimeLibraryItem>> {
         return when (groupType) {
             LibraryGroup.BY_SOURCE -> {
@@ -571,7 +584,7 @@ class AnimeLibraryScreenModel(
                         item.libraryAnime.categories.isEmpty() ||
                             item.libraryAnime.categories == listOf(AnimeCategory.UNCATEGORIZED_ID)
                     }
-                    val categorized = categories.filter { !it.isSystemCategory }.associateWith { category ->
+                    val categorized = categories.filter { !it.isSystemCategory && (showHiddenCategories || !it.hidden) }.associateWith { category ->
                         items.filter { item -> category.id in item.libraryAnime.categories }
                     }
                     val result = mutableMapOf<AnimeCategory, List<AnimeLibraryItem>>()
@@ -669,6 +682,7 @@ class AnimeLibraryScreenModel(
         val showCategoryTabs: Boolean = true,
         val showAnimeCount: Boolean = false,
         val showContinueWatchingButton: Boolean = false,
+        val isSyncEnabled: Boolean = false,
         val dialog: Dialog? = null,
         private val activeCategoryIndex: Int = 0,
     ) {

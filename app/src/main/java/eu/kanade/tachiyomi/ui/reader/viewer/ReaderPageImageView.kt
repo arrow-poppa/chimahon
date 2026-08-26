@@ -56,6 +56,8 @@ import eu.kanade.tachiyomi.util.view.isVisibleOnScreen
 import logcat.LogPriority
 import okio.BufferedSource
 import tachiyomi.core.common.util.system.ImageUtil
+import tachiyomi.core.common.util.system.Panel
+import tachiyomi.core.common.util.system.flattenToString
 import tachiyomi.core.common.util.system.logcat
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -83,6 +85,8 @@ open class ReaderPageImageView @JvmOverloads constructor(
     internal var pageView: View? = null
 
     private var config: Config? = null
+
+    private var pendingOnPageReadyDirection: Boolean? = null
 
     // ==================== OCR State ====================
     var ocrEnabled: Boolean = false
@@ -121,6 +125,18 @@ open class ReaderPageImageView @JvmOverloads constructor(
         }
 
     var ocrBoxOpacity: Float = 0.0f
+        set(value) {
+            field = value.coerceIn(0.0f, 1.0f)
+            (pageView as? SubsamplingScaleImageView)?.invalidate()
+        }
+
+    var activeOcrTextOpacity: Float = 1.0f
+        set(value) {
+            field = value.coerceIn(0.0f, 1.0f)
+            (pageView as? SubsamplingScaleImageView)?.invalidate()
+        }
+
+    var activeOcrBgOpacity: Float = 0.7f
         set(value) {
             field = value.coerceIn(0.0f, 1.0f)
             (pageView as? SubsamplingScaleImageView)?.invalidate()
@@ -199,23 +215,161 @@ open class ReaderPageImageView @JvmOverloads constructor(
         with(pageView as? SubsamplingScaleImageView) {
             if (this == null) return
             if (isReady) {
-                landscapeZoom(forward)
+                onPageReady(forward)
             } else {
-                setOnImageEventListener(
-                    object : SubsamplingScaleImageView.DefaultOnImageEventListener() {
-                        override fun onReady() {
-                            setupZoom(config)
-                            landscapeZoom(forward)
-                            this@ReaderPageImageView.onImageLoaded()
-                        }
-
-                        override fun onImageLoadError(e: Exception) {
-                            onImageLoadError(e)
-                        }
-                    },
-                )
+                pendingOnPageReadyDirection = forward
             }
         }
+    }
+
+    protected open fun onPageReady(forward: Boolean) {
+        (pageView as? SubsamplingScaleImageView)?.landscapeZoom(forward)
+    }
+
+    fun zoomToPanel(panel: Panel): Boolean {
+        val view = pageView as? SubsamplingScaleImageView ?: return false
+        if (!view.isReady) {
+            logcat(LogPriority.VERBOSE) {
+                "Panel nav zoomToPanel skipped: view not ready rect=${panel.rect.flattenToString()}"
+            }
+            return false
+        }
+
+        val scaleX = view.width.toFloat() / panel.rect.width().coerceAtLeast(1)
+        val scaleY = view.height.toFloat() / panel.rect.height().coerceAtLeast(1)
+        val targetScale = minOf(scaleX, scaleY) * 0.95f
+        val clampedScale = targetScale.coerceIn(view.minScale, view.maxScale)
+        val targetCenter = PointF(panel.rect.centerX().toFloat(), panel.rect.centerY().toFloat())
+
+        // Compute where the view will actually end up after pan-limit clamping
+        val clampedCenter = clampCenter(
+            targetCenter,
+            clampedScale,
+            view.width,
+            view.height,
+            view.sWidth,
+            view.sHeight,
+        )
+
+        // Compare current visible rect vs target visible rect
+        val currentCenter = view.center
+        val overlap = if (currentCenter != null) {
+            visibleRectOverlap(
+                currentCenter,
+                view.scale,
+                clampedCenter,
+                clampedScale,
+                view.width,
+                view.height,
+                view.sWidth,
+                view.sHeight,
+            )
+        } else {
+            0f
+        }
+
+        logcat(LogPriority.VERBOSE) {
+            "Panel nav zoomToPanel rect=${panel.rect.flattenToString()} " +
+                "view=${view.width}x${view.height} " +
+                "targetScale=$targetScale clampedScale=$clampedScale currentScale=${view.scale} " +
+                "clampedCenter=${clampedCenter.x},${clampedCenter.y} overlap=$overlap"
+        }
+
+        if (overlap > SKIP_ZOOM_OVERLAP_THRESHOLD) {
+            logcat(LogPriority.VERBOSE) { "Panel nav zoomToPanel skipped: view barely changes (overlap=$overlap)" }
+            return false
+        }
+
+        view.animateScaleAndCenter(
+            clampedScale,
+            targetCenter,
+        )!!
+            .withDuration(400)
+            .withEasing(EASE_IN_OUT_QUAD)
+            .withInterruptible(true)
+            .start()
+
+        return true
+    }
+
+    /**
+     * Replicates SubsamplingScaleImageView's PAN_LIMIT_INSIDE clamping to predict
+     * where the view will actually end up for a given center and scale.
+     */
+    private fun clampCenter(
+        requested: PointF,
+        scale: Float,
+        viewWidth: Int,
+        viewHeight: Int,
+        sWidth: Int,
+        sHeight: Int,
+    ): PointF {
+        val scaledWidth = sWidth * scale
+        val scaledHeight = sHeight * scale
+        val vCenterX = viewWidth / 2f
+        val vCenterY = viewHeight / 2f
+
+        var vTranslateX = vCenterX - requested.x * scale
+        var vTranslateY = vCenterY - requested.y * scale
+
+        if (scaledWidth <= viewWidth) {
+            vTranslateX = (viewWidth - scaledWidth) / 2f
+        } else {
+            vTranslateX = vTranslateX.coerceIn(viewWidth - scaledWidth, 0f)
+        }
+        if (scaledHeight <= viewHeight) {
+            vTranslateY = (viewHeight - scaledHeight) / 2f
+        } else {
+            vTranslateY = vTranslateY.coerceIn(viewHeight - scaledHeight, 0f)
+        }
+
+        return PointF(
+            (vCenterX - vTranslateX) / scale,
+            (vCenterY - vTranslateY) / scale,
+        )
+    }
+
+    /**
+     * Computes how much the visible source rects overlap between two view states.
+     * Returns 0..1 where 1 means identical views.
+     */
+    private fun visibleRectOverlap(
+        centerA: PointF,
+        scaleA: Float,
+        centerB: PointF,
+        scaleB: Float,
+        viewWidth: Int,
+        viewHeight: Int,
+        sWidth: Int,
+        sHeight: Int,
+    ): Float {
+        fun visibleRect(center: PointF, scale: Float): RectF {
+            val halfW = viewWidth / (2f * scale)
+            val halfH = viewHeight / (2f * scale)
+            return RectF(
+                (center.x - halfW).coerceAtLeast(0f),
+                (center.y - halfH).coerceAtLeast(0f),
+                (center.x + halfW).coerceAtMost(sWidth.toFloat()),
+                (center.y + halfH).coerceAtMost(sHeight.toFloat()),
+            )
+        }
+
+        val rectA = visibleRect(centerA, scaleA)
+        val rectB = visibleRect(centerB, scaleB)
+
+        val interLeft = maxOf(rectA.left, rectB.left)
+        val interTop = maxOf(rectA.top, rectB.top)
+        val interRight = minOf(rectA.right, rectB.right)
+        val interBottom = minOf(rectA.bottom, rectB.bottom)
+
+        if (interLeft >= interRight || interTop >= interBottom) return 0f
+
+        val interArea = (interRight - interLeft) * (interBottom - interTop)
+        val areaA = rectA.width() * rectA.height()
+        val areaB = rectB.width() * rectB.height()
+        val unionArea = areaA + areaB - interArea
+
+        return if (unionArea > 0f) interArea / unionArea else 0f
     }
 
     private fun SubsamplingScaleImageView.landscapeZoom(forward: Boolean) {
@@ -472,7 +626,12 @@ open class ReaderPageImageView @JvmOverloads constructor(
             object : SubsamplingScaleImageView.DefaultOnImageEventListener() {
                 override fun onReady() {
                     setupZoom(config)
-                    if (isVisibleOnScreen()) landscapeZoom(true)
+                    val direction = pendingOnPageReadyDirection
+                    pendingOnPageReadyDirection = null
+                    when {
+                        direction != null -> onPageReady(direction)
+                        isVisibleOnScreen() -> onPageReady(true)
+                    }
                     this@ReaderPageImageView.onImageLoaded()
                 }
 
@@ -960,3 +1119,4 @@ open class ReaderPageImageView @JvmOverloads constructor(
 }
 
 private const val MAX_ZOOM_SCALE = 5F
+private const val SKIP_ZOOM_OVERLAP_THRESHOLD = 0.85F

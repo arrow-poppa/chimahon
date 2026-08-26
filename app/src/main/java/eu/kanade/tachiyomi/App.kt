@@ -65,6 +65,7 @@ import eu.kanade.tachiyomi.di.PreferenceModule
 import eu.kanade.tachiyomi.di.SYPreferenceModule
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.ui.base.delegate.SecureActivityDelegate
+import eu.kanade.tachiyomi.ui.dictionary.ScreenLookupServiceState
 import eu.kanade.tachiyomi.util.CrashLogUtil
 import eu.kanade.tachiyomi.util.system.DeviceUtil
 import eu.kanade.tachiyomi.util.system.GLUtil
@@ -105,6 +106,8 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factory {
+
+    private var everStarted = false
 
     private val basePreferences: BasePreferences by injectLazy()
     private val privacyPreferences: PrivacyPreferences by injectLazy()
@@ -216,11 +219,6 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         if (!WorkManager.isInitialized()) {
             WorkManager.initialize(this, Configuration.Builder().build())
         }
-        val syncPreferences: SyncPreferences = Injekt.get()
-        val syncTriggerOpt = syncPreferences.getSyncTriggerOptions()
-        if (syncPreferences.isSyncEnabled() && syncTriggerOpt.syncOnAppStart) {
-            SyncDataJob.startNow(this@App)
-        }
 
         initializeMigrator()
         
@@ -301,10 +299,19 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
     override fun onStart(owner: LifecycleOwner) {
         SecureActivityDelegate.onApplicationStart()
 
-        val syncPreferences: SyncPreferences = Injekt.get()
-        val syncTriggerOpt = syncPreferences.getSyncTriggerOptions()
-        if (syncPreferences.isSyncEnabled() && syncTriggerOpt.syncOnAppResume) {
-            SyncDataJob.startNow(this@App)
+        if (!ScreenLookupServiceState.isEntryInProgress) {
+            val isFirstStart = !everStarted
+            everStarted = true
+
+            val syncPreferences: SyncPreferences = Injekt.get()
+            val syncTriggerOpt = syncPreferences.getSyncTriggerOptions()
+            if (syncPreferences.isSyncEnabled()) {
+                if (isFirstStart && syncTriggerOpt.syncOnAppStart) {
+                    SyncDataJob.startNow(this@App)
+                } else if (!isFirstStart && syncTriggerOpt.syncOnAppResume) {
+                    SyncDataJob.startNow(this@App)
+                }
+            }
         }
 
         // AM (DISCORD) -->
@@ -313,6 +320,7 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
     }
 
     override fun onStop(owner: LifecycleOwner) {
+        ScreenLookupServiceState.isEntryInProgress = false
         SecureActivityDelegate.onApplicationStopped()
 
         // AM (DISCORD) -->

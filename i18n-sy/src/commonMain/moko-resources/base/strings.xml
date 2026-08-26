@@ -263,7 +263,8 @@
     <string name="sync_on_episode_seen">Sync on Episode Seen</string>
     <string name="sync_on_app_start">Sync on App Start</string>
     <string name="sync_on_app_resume">Sync on App Resume</string>
-    <string name="sync_library">Sync TTSU</string>
+    <string name="sync_library">Sync library</string>
+    <string name="sync_ttsu">Sync TTSU</string>
 
     <!-- Security settings -->
     <string name="biometric_lock_times">Biometric lock times</string>

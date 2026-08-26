@@ -279,6 +279,12 @@ class DownloadQueueScreenModel(
         }
     }
 
+    fun retryOcr(chapterId: Long) {
+        screenModelScope.launch {
+            ocrManager.retryChapter(chapterId)
+        }
+    }
+
     fun <R : Comparable<R>> reorderQueue(selector: (DownloadItem) -> R, reverse: Boolean = false) {
         val adapter = adapter ?: return
         val newDownloads = mutableListOf<Download>()

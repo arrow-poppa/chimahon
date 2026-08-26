@@ -2812,6 +2812,8 @@
       if (payload.ankiDupAction !== undefined) {
         _lastAnkiDupAction = payload.ankiDupAction;
       }
+      root.dataset.compactGlossary = String(payload.compactGlossary === true);
+      root.dataset.glossaryLayoutMode = payload.compactGlossary === true ? 'compact' : 'default';
 
       debugLog('render.start', {
         isDark: !!payload.isDark,

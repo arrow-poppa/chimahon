@@ -57,6 +57,7 @@ class ScreenLookupPermissionActivity : BaseActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        ScreenLookupServiceState.isEntryInProgress = true
         super.onCreate(savedInstanceState)
 
         setComposeContent {

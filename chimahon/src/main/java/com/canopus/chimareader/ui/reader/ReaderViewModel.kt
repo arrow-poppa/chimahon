@@ -16,6 +16,7 @@ import com.canopus.chimareader.data.FileNames
 import com.canopus.chimareader.data.FontManager
 import com.canopus.chimareader.data.NovelReaderSettings
 import com.canopus.chimareader.data.Statistics
+import com.canopus.chimareader.data.StatisticsAutostartMode
 import com.canopus.chimareader.data.Theme
 import com.canopus.chimareader.data.epub.EpubBook
 import com.canopus.chimareader.data.epub.SpineItemType
@@ -187,6 +188,7 @@ class ReaderViewModel(
     var einkRefreshDelayMillis by mutableIntStateOf(0)
     var einkRefreshPageInterval by mutableIntStateOf(1)
     var einkRefreshColor by mutableStateOf("BLACK")
+    var statisticsAutostartMode by mutableStateOf(StatisticsAutostartMode.OFF)
 
     private val ttuSyncManager: TtuSyncManager? by lazy {
         try { Injekt.get<TtuSyncManager>() } catch (_: Exception) { null }
@@ -263,6 +265,7 @@ class ReaderViewModel(
             einkRefreshDelayMillis = settings.einkRefreshDelayMillis.first()
             einkRefreshPageInterval = settings.einkRefreshPageInterval.first()
             einkRefreshColor = settings.einkRefreshColor.first()
+            statisticsAutostartMode = settings.statisticsAutostartMode.first()
         }
 
         val bookmark = BookStorage.loadBookmark(rootUrl)
@@ -300,6 +303,10 @@ class ReaderViewModel(
             initialStatistics = fullStatistics,
             enabled = true,
         )
+
+        if (statisticsAutostartMode == StatisticsAutostartMode.ON) {
+            statisticsTracker.start(totalExploredCharCount)
+        }
 
         scope.launch {
             while (true) {
@@ -441,6 +448,9 @@ class ReaderViewModel(
         scope.launch {
             settings.einkRefreshColor.collect { einkRefreshColor = it }
         }
+        scope.launch {
+            settings.statisticsAutostartMode.collect { statisticsAutostartMode = it }
+        }
 
         syncOnOpen()
     }
@@ -475,6 +485,13 @@ class ReaderViewModel(
     fun updateEinkRefreshDelayMillis(value: Int) = scope.launch { settings.setEinkRefreshDelayMillis(value) }
     fun updateEinkRefreshPageInterval(value: Int) = scope.launch { settings.setEinkRefreshPageInterval(value) }
     fun updateEinkRefreshColor(value: String) = scope.launch { settings.setEinkRefreshColor(value) }
+    fun updateStatisticsAutostartMode(value: StatisticsAutostartMode) = scope.launch { settings.setStatisticsAutostartMode(value) }
+
+    fun onPageTurned() {
+        if (statisticsAutostartMode == StatisticsAutostartMode.PAGETURN) {
+            statisticsTracker.startForPageTurnIfNeeded(totalExploredCharCount)
+        }
+    }
 
     fun getReaderSettings(context: Context): ReaderSettings {
         val fontUrl = if (FontManager.isCustomFont(context, selectedFont)) {

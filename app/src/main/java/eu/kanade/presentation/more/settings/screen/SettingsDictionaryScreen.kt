@@ -187,11 +187,6 @@ private fun searchResolutionName(stored: String): String {
     }
 }
 
-private enum class OcrScaleAxis(val label: String) {
-    X("X"),
-    Y("Y"),
-}
-
 private enum class PopupSizeAxis(val label: String) {
     WIDTH("W"),
     HEIGHT("H"),
@@ -219,6 +214,7 @@ private val markerSections = listOf(
             Marker.GLOSSARY_FIRST_NO_DICT,
             Marker.GLOSSARY_FIRST_BRIEF,
             Marker.SELECTED_GLOSSARY,
+            Marker.SELECTED_GLOSSARY_NO_FALLBACK,
             Marker.SINGLE_GLOSSARY,
         ),
     ),
@@ -317,6 +313,7 @@ private val markerDisplayLabels: Map<String, String> = Marker.ALL_WITH_TODO.asso
         Marker.POPUP_SELECTION_TEXT -> "${prefix}Popup Selection"
         Marker.PLAIN_SELECTED_TEXT -> "${prefix}Plain Selected Text"
         Marker.SELECTED_GLOSSARY -> "${prefix}Selected Glossary"
+        Marker.SELECTED_GLOSSARY_NO_FALLBACK -> "${prefix}Selected Glossary No Fallback"
         else -> marker
     }
 }
@@ -325,13 +322,20 @@ private fun loadDictionaryList(context: Context) {
     Log.d(TAG, "loadDictionaryList: called")
     val dictionariesDir = File(context.getExternalFilesDir(null), "dictionaries")
     val names = if (dictionariesDir.exists()) {
-        listOf("term", "frequency", "pitch", "kanji")
+        val typed = listOf("term", "frequency", "pitch", "kanji")
             .flatMap { type ->
                 val typeDir = File(dictionariesDir, type)
                 if (!typeDir.isDirectory) emptyList()
                 else typeDir.listFiles()?.filter { it.isDirectory }?.map { it.name }.orEmpty()
             }
             .distinct()
+        if (typed.isNotEmpty()) {
+            typed
+        } else {
+            // Fallback for flat layout (pre-migration or probe failure) - minimal clean fix
+            val typeSet = setOf("term", "frequency", "pitch", "kanji")
+            dictionariesDir.listFiles()?.filter { it.isDirectory && it.name !in typeSet }?.map { it.name }.orEmpty().distinct()
+        }
     } else {
         emptyList()
     }
@@ -1050,44 +1054,13 @@ object SettingsDictionaryScreen : SearchableSettings {
         val fontSizePref = dictionaryPreferences.fontSize()
         val fontSize by fontSizePref.collectAsState()
 
-        val ocrBoxScaleXPref = dictionaryPreferences.ocrBoxScaleX()
-        val ocrBoxScaleX by ocrBoxScaleXPref.collectAsState()
-
-        val ocrBoxScaleYPref = dictionaryPreferences.ocrBoxScaleY()
-        val ocrBoxScaleY by ocrBoxScaleYPref.collectAsState()
-
-        val ocrBoxOpacityPref = dictionaryPreferences.ocrBoxOpacity()
-        val ocrBoxOpacity by ocrBoxOpacityPref.collectAsState()
-
-        val ocrButtonSizePref = dictionaryPreferences.ocrButtonSize()
-        val ocrButtonSize by ocrButtonSizePref.collectAsState()
-
-        val ocrButtonAlphaPref = dictionaryPreferences.ocrButtonAlpha()
-        val ocrButtonAlpha by ocrButtonAlphaPref.collectAsState()
-
-        val ocrButtonColorPref = dictionaryPreferences.ocrButtonColor()
-        val ocrButtonColor by ocrButtonColorPref.collectAsState()
-
-        val videoOcrAudioPaddingPref = dictionaryPreferences.videoOcrSentenceAudioPaddingSeconds()
-        val videoOcrAudioPadding by videoOcrAudioPaddingPref.collectAsState()
-
-        val parallelOcrLimitPref = dictionaryPreferences.parallelOcrLimit()
-        val parallelOcrLimit by parallelOcrLimitPref.collectAsState()
-
-        val ocrEnginePref = dictionaryPreferences.ocrEngine()
-        val ocrEngine by ocrEnginePref.collectAsState()
-
-        val parallelOcrSubtitle = when {
-            parallelOcrLimit == 1 -> "1 chapter (Recommended - safe and stable)"
-            ocrEngine == "local" -> "$parallelOcrLimit chapters (Running multiple OCR tasks on-device simultaneously will increase battery drain and cause the device to heat up)"
-            else -> "$parallelOcrLimit chapters (Running multiple OCR tasks online simultaneously may cause temporary rate limits or IP blocks)"
-        }
-
         val navigator = LocalNavigator.currentOrThrow
         val customCssPref = dictionaryPreferences.customCss()
 
         val themeModePref = dictionaryPreferences.themeMode()
         val themeMode by themeModePref.collectAsState()
+        val customColorPref = dictionaryPreferences.customColor()
+        val customColor by customColorPref.collectAsState()
 
         // Keep multi-select set prefs aligned with the boolean flags used by the popup.
         val frequencyModesPref = dictionaryPreferences.frequencyDisplayModes()
@@ -1342,6 +1315,7 @@ object SettingsDictionaryScreen : SearchableSettings {
                             ) {
                                 val chips = listOf(
                                     "system" to stringResource(MR.strings.theme_system),
+                                    "app" to "App",
                                     "light" to stringResource(MR.strings.theme_light),
                                     "dark" to stringResource(MR.strings.theme_dark),
                                     "pure_black" to stringResource(MR.strings.pref_dict_theme_pure_black),
@@ -1358,7 +1332,7 @@ object SettingsDictionaryScreen : SearchableSettings {
                     ),
                     Preference.PreferenceItem.TextPreference(
                         title = stringResource(KMR.strings.pref_custom_color),
-                        subtitle = stringResource(KMR.strings.custom_color_description),
+                        subtitle = if (customColor != 0) "Custom color active (tap to edit)" else stringResource(KMR.strings.custom_color_description),
                         onClick = {
                             navigator.push(AppCustomThemeColorPickerScreen(isDictionary = true))
                         },
@@ -1477,6 +1451,11 @@ object SettingsDictionaryScreen : SearchableSettings {
                         subtitle = stringResource(MR.strings.pref_dict_group_terms_summary),
                     ),
                     Preference.PreferenceItem.SwitchPreference(
+                        preference = dictionaryPreferences.compactGlossary(),
+                        title = "Compact glossaries",
+                        subtitle = "Show all senses inline separated by · instead of a numbered list",
+                    ),
+                    Preference.PreferenceItem.SwitchPreference(
                         preference = dictionaryPreferences.showNavigationButtons(),
                         title = stringResource(KMR.strings.pref_dict_show_navigation_buttons),
                         subtitle = stringResource(KMR.strings.pref_dict_show_navigation_buttons_summary),
@@ -1497,189 +1476,7 @@ object SettingsDictionaryScreen : SearchableSettings {
                     ),
                 ),
             ),
-            Preference.PreferenceGroup(
-                title = stringResource(MR.strings.pref_category_ocr),
-                preferenceItems = persistentListOf(
-                    Preference.PreferenceItem.CustomPreference(
-                        title = stringResource(MR.strings.pref_dict_ocr_box_scale),
-                        content = {
-                            var selectedAxis by remember { mutableStateOf(OcrScaleAxis.X) }
-                            val selectedValue = when (selectedAxis) {
-                                OcrScaleAxis.X -> ocrBoxScaleX
-                                OcrScaleAxis.Y -> ocrBoxScaleY
-                            }
-                            val setSelectedValue: (Float) -> Unit = { value ->
-                                val rounded = ((value * 10f).roundToInt() / 10f).coerceIn(0.5f, 3.0f)
-                                when (selectedAxis) {
-                                    OcrScaleAxis.X -> ocrBoxScaleXPref.set(rounded)
-                                    OcrScaleAxis.Y -> ocrBoxScaleYPref.set(rounded)
-                                }
-                            }
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text(
-                                        text = stringResource(MR.strings.pref_dict_ocr_box_scale),
-                                        style = MaterialTheme.typography.titleMedium,
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    IconButton(
-                                        onClick = {
-                                            ocrBoxScaleXPref.set(1.0f)
-                                            ocrBoxScaleYPref.set(1.0f)
-                                        },
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Outlined.Refresh,
-                                            contentDescription = "Reset OCR box scale",
-                                        )
-                                    }
-                                }
-                                Text(
-                                    text = "X ${String.format("%.1fx", ocrBoxScaleX)}  Y ${String.format("%.1fx", ocrBoxScaleY)}",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                                    OcrScaleAxis.entries.forEachIndexed { index, axis ->
-                                        SegmentedButton(
-                                            selected = selectedAxis == axis,
-                                            onClick = { selectedAxis = axis },
-                                            shape = SegmentedButtonDefaults.itemShape(
-                                                index,
-                                                OcrScaleAxis.entries.size,
-                                            ),
-                                        ) {
-                                            Text(axis.label)
-                                        }
-                                    }
-                                }
-                                Slider(
-                                    value = selectedValue.coerceIn(0.5f, 3.0f),
-                                    onValueChange = setSelectedValue,
-                                    valueRange = 0.5f..3.0f,
-                                    steps = 24,
-                                )
-                            }
-                        },
-                    ),
-                    Preference.PreferenceItem.SliderPreference(
-                        value = (ocrBoxOpacity * 100).toInt(),
-                        title = stringResource(MR.strings.pref_dict_ocr_box_opacity),
-                        subtitle = "${(ocrBoxOpacity * 100).toInt()}%",
-                        valueRange = 0..100 step 5,
-                        steps = 19,
-                        onValueChanged = { ocrBoxOpacityPref.set(it / 100f) },
-                    ),
-                    Preference.PreferenceItem.SliderPreference(
-                        value = ocrButtonSize,
-                        title = stringResource(MR.strings.pref_dict_ocr_button_size),
-                        subtitle = "${ocrButtonSize}dp",
-                        valueRange = 40..96 step 2,
-                        steps = 27,
-                        onValueChanged = { ocrButtonSizePref.set(it) },
-                    ),
-                    Preference.PreferenceItem.SliderPreference(
-                        value = (ocrButtonAlpha * 100).toInt(),
-                        title = stringResource(MR.strings.pref_dict_ocr_button_alpha),
-                        subtitle = "${(ocrButtonAlpha * 100).toInt()}%",
-                        valueRange = 10..100 step 5,
-                        steps = 17,
-                        onValueChanged = { ocrButtonAlphaPref.set(it / 100f) },
-                    ),
-                    Preference.PreferenceItem.CustomPreference(
-                        title = stringResource(MR.strings.pref_dict_ocr_button_color),
-                        content = {
-                            val btnCtx = LocalContext.current
-                            val defaultColor = ContextCompat.getColor(btnCtx, eu.kanade.tachiyomi.R.color.tachiyomi_primary)
-                            val presets = listOf(
-                                "Default" to defaultColor,
-                                "White" to Color.White.toArgb(),
-                                "Black" to Color.Black.toArgb(),
-                                "Red" to Color(0xFFD32F2F).toArgb(),
-                                "Orange" to Color(0xFFF57C00).toArgb(),
-                                "Amber" to Color(0xFFFFA000).toArgb(),
-                                "Green" to Color(0xFF388E3C).toArgb(),
-                                "Teal" to Color(0xFF00897B).toArgb(),
-                                "Blue" to Color(0xFF1976D2).toArgb(),
-                                "Indigo" to Color(0xFF3949AB).toArgb(),
-                                "Purple" to Color(0xFF7B1FA2).toArgb(),
-                                "Pink" to Color(0xFFC2185B).toArgb(),
-                            )
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    presets.forEach { (name, argb) ->
-                                        FilterChip(
-                                            selected = (if (argb == defaultColor) 0 else argb) == ocrButtonColor,
-                                            onClick = {
-                                                ocrButtonColorPref.set(if (argb == defaultColor) 0 else argb)
-                                            },
-                                            label = { Text(name) },
-                                            leadingIcon = {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(16.dp)
-                                                        .clip(RoundedCornerShape(8.dp))
-                                                        .background(Color(argb)),
-                                                )
-                                            },
-                                        )
-                                    }
-                                }
-                            }
-                        },
-                    ),
-                    Preference.PreferenceItem.ListPreference(
-                        preference = dictionaryPreferences.ocrEngine(),
-                        entries = persistentListOf(
-                            "cloud" to "Cloud (Google Lens)",
-                            *if (eu.kanade.tachiyomi.BuildConfig.HAS_LOCAL_OCR) {
-                                arrayOf("local" to "Local (On-Device)")
-                            } else {
-                                emptyArray()
-                            },
-                        ).associate { it.first to it.second }.toPersistentMap(),
-                        title = "OCR Engine",
-                        onValueChanged = { value ->
-                            if (value == "local") {
-                                Injekt.get<ModelDownloader>().triggerDownload()
-                            }
-                            true
-                        },
-                    ),
-                    Preference.PreferenceItem.SliderPreference(
-                        value = parallelOcrLimit,
-                        title = "Concurrent OCR tasks",
-                        subtitle = parallelOcrSubtitle,
-                        valueRange = 1..5,
-                        steps = 3,
-                        onValueChanged = { parallelOcrLimitPref.set(it) },
-                    ),
-                    Preference.PreferenceItem.SliderPreference(
-                        value = videoOcrAudioPadding,
-                        title = "Video OCR sentence audio padding",
-                        subtitle = "${videoOcrAudioPadding}s before and after the current video time",
-                        valueRange = 1..15,
-                        steps = 13,
-                        onValueChanged = { videoOcrAudioPaddingPref.set(it) },
-                    ),
-                ),
-            ),
+
         )
     }
 
@@ -3022,6 +2819,8 @@ object SettingsDictionaryScreen : SearchableSettings {
         onDismiss: () -> Unit,
         onToggleMarker: (String) -> Unit,
     ) {
+        val context = LocalContext.current
+        LaunchedEffect(Unit) { loadDictionaryList(context) }
         var query by remember { mutableStateOf("") }
         var selectedSection by remember { mutableStateOf<String?>(null) }
         var singleGlossaryExpanded by remember { mutableStateOf(false) }

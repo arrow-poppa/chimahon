@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.drawable.Drawable
 import android.view.LayoutInflater
 import android.webkit.WebView
 import androidx.annotation.ColorInt
@@ -12,6 +13,7 @@ import chimahon.DictionaryRepository
 import chimahon.MediaInfo
 import eu.kanade.presentation.util.formattedMessage
 import eu.kanade.tachiyomi.databinding.ReaderErrorBinding
+import eu.kanade.tachiyomi.data.panel.PanelModelDownloader
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.ui.reader.model.InsertPage
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
@@ -20,6 +22,7 @@ import eu.kanade.tachiyomi.ui.reader.viewer.OcrTextBlock
 import eu.kanade.tachiyomi.ui.reader.viewer.ReaderPageImageView
 import eu.kanade.tachiyomi.ui.reader.viewer.ReaderProgressIndicator
 import eu.kanade.tachiyomi.ui.webview.WebViewActivity
+import eu.kanade.tachiyomi.util.view.isVisibleOnScreen
 import eu.kanade.tachiyomi.widget.ViewPagerAdapter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -29,6 +32,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import logcat.LogPriority
+import mihon.domain.panel.interactor.DetectPanels
 import okio.Buffer
 import okio.BufferedSource
 import tachiyomi.core.common.i18n.stringResource
@@ -36,9 +40,14 @@ import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.core.common.util.lang.withUIContext
 import tachiyomi.core.common.util.system.ImageUtil
+import tachiyomi.core.common.util.system.Panel
+import tachiyomi.core.common.util.system.ReadingDirection
+import tachiyomi.core.common.util.system.flattenToString
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.decoder.ImageDecoder
 import tachiyomi.i18n.MR
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 import kotlin.math.max
 
 /**
@@ -93,6 +102,14 @@ class PagerPageHolder(
      */
     private var extraLoadJob: Job? = null
 
+    private val detectPanels: DetectPanels by lazy { Injekt.get() }
+
+    private var panels: List<Panel> = emptyList()
+    private var currentPanelIndex = -1
+    private var panelDetectionJob: Job? = null
+    private var panelDetectionGeneration = 0
+    private var pendingBackwardNavigation = false
+
     /**
      * Detected crop rect for the image currently displayed.
      * Calculated during `setImage` if `imageCropBorders` is enabled.
@@ -133,6 +150,8 @@ class PagerPageHolder(
         ocrLoadJob?.cancel()
         ocrLoadJob = null
         clearOcr()
+        panelDetectionJob?.cancel()
+        panelDetectionJob = null
     }
 
     private fun initProgressIndicator() {
@@ -218,11 +237,18 @@ class PagerPageHolder(
             progressIndicator?.setProgress(95)
         }
 
+        panels = emptyList()
+        currentPanelIndex = -1
+        pendingBackwardNavigation = false
+
+        panelDetectionJob?.cancel()
+        panelDetectionGeneration++
+
         val streamFn = page.stream ?: return
         val streamFn2 = extraPage?.stream
 
         try {
-            val (source, isAnimated, background) = withIOContext {
+            val loadResult = withIOContext {
                 streamFn().buffered(16).use { source ->
                     // SY -->
                     if (extraPage != null) {
@@ -247,15 +273,22 @@ class PagerPageHolder(
                         val cropRect = if (!isAnimated && viewer.config.imageCropBorders) {
                             OcrCoordinateMapper.detectCropRect(itemSource)
                         } else null
+                        pageCropRect = cropRect
 
-                        Triple(itemSource, isAnimated, background).also { pageCropRect = cropRect }
+                        val panelBitmap = if (!isAnimated && viewer.config.panelNavigation) {
+                            decodePanelBitmap(itemSource)
+                        } else {
+                            null
+                        }
+
+                        LoadResult(itemSource, isAnimated, background, panelBitmap)
                     }
                 }
             }
             withUIContext {
                 setImage(
-                    source,
-                    isAnimated,
+                    loadResult.source,
+                    loadResult.isAnimated,
                     Config(
                         zoomDuration = viewer.config.doubleTapAnimDuration,
                         minimumScaleType = viewer.config.imageScaleType,
@@ -270,16 +303,217 @@ class PagerPageHolder(
                         eInkMode = viewer.config.eInkMode,
                     ),
                 )
-                if (!isAnimated) {
-                    pageBackground = background
+                if (!loadResult.isAnimated) {
+                    pageBackground = loadResult.background
                 }
                 removeErrorLayout()
+                maybeStartPanelDetection(loadResult)
             }
         } catch (e: Throwable) {
             logcat(LogPriority.ERROR, e)
             withUIContext {
                 setError(e)
             }
+        }
+    }
+
+    private fun maybeStartPanelDetection(loadResult: LoadResult) {
+        if (!viewer.config.panelNavigation || loadResult.isAnimated) {
+            loadResult.panelBitmap?.bitmap?.recycle()
+            logcat(LogPriority.VERBOSE) {
+                "Panel nav detection skipped index=${page.index} enabled=${viewer.config.panelNavigation} animated=${loadResult.isAnimated}"
+            }
+            return
+        }
+
+        val downloader = Injekt.get<PanelModelDownloader>()
+        if (!downloader.isDownloaded) {
+            logcat(LogPriority.VERBOSE) {
+                "Panel nav detection skipped index=${page.index}: model not downloaded, triggering download"
+            }
+            loadResult.panelBitmap?.bitmap?.recycle()
+            downloader.triggerDownload()
+            return
+        }
+
+        val generation = panelDetectionGeneration
+        val cacheKey = panelDetectionCacheKey()
+        val decoded = loadResult.panelBitmap
+        if (decoded == null) {
+            logcat(LogPriority.VERBOSE) { "Panel nav detection skipped index=${page.index}: no processed panel bitmap" }
+            return
+        }
+
+        panelDetectionJob = scope.launchIO {
+            val result = try {
+                detectPanels.await(
+                    cacheKey = cacheKey,
+                    image = decoded.bitmap,
+                    originalWidth = decoded.originalWidth,
+                    originalHeight = decoded.originalHeight,
+                    direction = readingDirection(),
+                )
+            } finally {
+                decoded.bitmap.recycle()
+            }
+
+            withUIContext {
+                if (generation != panelDetectionGeneration) return@withUIContext
+
+                panels = result.panels
+                currentPanelIndex = if (pendingBackwardNavigation && panels.isNotEmpty()) {
+                    panels.size
+                } else {
+                    -1
+                }
+                pendingBackwardNavigation = false
+                logcat(LogPriority.VERBOSE) {
+                    "Panel nav detection assigned index=${page.index} panels=${panels.size} " +
+                        "ordered=${panels.joinToString { it.rect.flattenToString() }}"
+                }
+            }
+        }
+    }
+
+    private fun decodePanelBitmap(source: BufferedSource): DecodedPanelBitmap? {
+        val options = BitmapFactory.Options().apply {
+            inJustDecodeBounds = true
+        }
+        source.peek().inputStream().use {
+            BitmapFactory.decodeStream(it, null, options)
+        }
+
+        val largestDimension = maxOf(options.outWidth, options.outHeight)
+        if (largestDimension <= 0) {
+            logcat(LogPriority.VERBOSE) { "Panel nav decodeBitmap failed: dimensions <= 0" }
+            return null
+        }
+
+        val sampleSize = generateSequence(1) { it * 2 }
+            .first { largestDimension / it <= 800 }
+
+        val bitmap = source.peek().inputStream().use {
+            BitmapFactory.decodeStream(
+                it,
+                null,
+                BitmapFactory.Options().apply { inSampleSize = sampleSize },
+            )
+        }
+
+        if (bitmap == null) {
+            logcat(LogPriority.VERBOSE) {
+                "Panel nav decodeBitmap failed: bitmap null after decode with sampleSize=$sampleSize"
+            }
+            return null
+        }
+
+        logcat(LogPriority.VERBOSE) {
+            "Panel nav decodeBitmap success sampleSize=$sampleSize " +
+                "bitmapSize=${bitmap.width}x${bitmap.height} " +
+                "originalSize=${options.outWidth}x${options.outHeight} " +
+                "config=${bitmap.config}"
+        }
+
+        return DecodedPanelBitmap(
+            bitmap = bitmap,
+            originalWidth = options.outWidth,
+            originalHeight = options.outHeight,
+        )
+    }
+
+    private fun readingDirection(): ReadingDirection {
+        return when (viewer) {
+            is R2LPagerViewer -> ReadingDirection.RTL
+            is VerticalPagerViewer -> ReadingDirection.VERTICAL
+            else -> ReadingDirection.LTR
+        }
+    }
+
+    fun hasPanels(): Boolean = panels.isNotEmpty()
+
+    fun hasNextPanel(): Boolean = hasPanels() && currentPanelIndex < panels.lastIndex
+
+    fun hasPreviousPanel(): Boolean = hasPanels() && currentPanelIndex > 0
+
+    fun zoomToNextPanel(): Boolean {
+        var nextIndex = currentPanelIndex + 1
+        while (nextIndex <= panels.lastIndex) {
+            logcat(LogPriority.VERBOSE) {
+                "Panel nav next attempt index=${page.index} currentPanelIndex=$currentPanelIndex nextIndex=$nextIndex rect=${panels[nextIndex].rect.flattenToString()}"
+            }
+            if (zoomToPanel(panels[nextIndex])) {
+                currentPanelIndex = nextIndex
+                logcat(LogPriority.VERBOSE) {
+                    "Panel nav next result index=${page.index} zoomed=true currentPanelIndex=$currentPanelIndex"
+                }
+                return true
+            }
+            // Zoom was too small, skip to next
+            nextIndex++
+        }
+        logcat(LogPriority.VERBOSE) {
+            "Panel nav next unavailable index=${page.index} currentPanelIndex=$currentPanelIndex panelCount=${panels.size}"
+        }
+        return false
+    }
+
+    fun zoomToPreviousPanel(): Boolean {
+        var previousIndex = currentPanelIndex - 1
+        while (previousIndex >= 0) {
+            logcat(LogPriority.VERBOSE) {
+                "Panel nav previous attempt index=${page.index} currentPanelIndex=$currentPanelIndex previousIndex=$previousIndex rect=${panels[previousIndex].rect.flattenToString()}"
+            }
+            if (zoomToPanel(panels[previousIndex])) {
+                currentPanelIndex = previousIndex
+                logcat(LogPriority.VERBOSE) {
+                    "Panel nav previous result index=${page.index} zoomed=true currentPanelIndex=$currentPanelIndex"
+                }
+                return true
+            }
+            // Zoom was too small, skip to previous
+            previousIndex--
+        }
+        logcat(LogPriority.VERBOSE) {
+            "Panel nav previous unavailable index=${page.index} currentPanelIndex=$currentPanelIndex panelCount=${panels.size}"
+        }
+        return false
+    }
+
+    protected override fun onPageReady(forward: Boolean) {
+        logcat(LogPriority.VERBOSE) {
+            "Panel nav onPageReady index=${page.index} forward=$forward panelCount=${panels.size} visible=${isVisibleOnScreen()}"
+        }
+        super.onPageReady(forward)
+    }
+
+    override fun onPageSelected(forward: Boolean) {
+        super.onPageSelected(forward)
+        // When navigating backward into a page, position after the last panel
+        // so the first backward tap zooms to the last panel
+        if (!forward) {
+            if (hasPanels()) {
+                currentPanelIndex = panels.size
+            } else {
+                pendingBackwardNavigation = true
+            }
+        }
+        logcat(LogPriority.VERBOSE) {
+            "Panel nav onPageSelected index=${page.index} forward=$forward panelCount=${panels.size} currentPanelIndex=$currentPanelIndex"
+        }
+    }
+
+    private fun panelDetectionCacheKey(): String {
+        val pageType = if (page is InsertPage) "insert" else "page"
+        return buildString {
+            append(page.chapter.chapter.id)
+            append(':')
+            append(page.index)
+            append(':')
+            append(pageType)
+            append(':')
+            append(page.url)
+            append(':')
+            append(page.imageUrl ?: "")
         }
     }
 
@@ -496,6 +730,8 @@ class PagerPageHolder(
         ocrBoxScaleX = viewer.activity.viewModel.getOcrBoxScaleX()
         ocrBoxScaleY = viewer.activity.viewModel.getOcrBoxScaleY()
         ocrBoxOpacity = viewer.activity.viewModel.getOcrBoxOpacity()
+        activeOcrTextOpacity = viewer.activity.viewModel.getActiveOcrTextOpacity()
+        activeOcrBgOpacity = viewer.activity.viewModel.getActiveOcrBgOpacity()
         ocrScanResolution = viewer.activity.viewModel.getOcrScanResolution()
         val ocrEnabled = viewer.activity.viewModel.isOcrEnabled()
         this.ocrEnabled = ocrEnabled
@@ -515,6 +751,8 @@ class PagerPageHolder(
         ocrBoxScaleX = viewer.activity.viewModel.getOcrBoxScaleX()
         ocrBoxScaleY = viewer.activity.viewModel.getOcrBoxScaleY()
         ocrBoxOpacity = viewer.activity.viewModel.getOcrBoxOpacity()
+        activeOcrTextOpacity = viewer.activity.viewModel.getActiveOcrTextOpacity()
+        activeOcrBgOpacity = viewer.activity.viewModel.getActiveOcrBgOpacity()
         ocrScanResolution = viewer.activity.viewModel.getOcrScanResolution()
         ocrEnabled = enabled
         if (!enabled) {
@@ -524,11 +762,9 @@ class PagerPageHolder(
             return
         }
 
-        if (ocrBlocks.isEmpty()) {
-            ocrLoadJob?.cancel()
-            ocrLoadJob = scope.launch {
-                loadOcrWithTransform()
-            }
+        ocrLoadJob?.cancel()
+        ocrLoadJob = scope.launch {
+            loadOcrWithTransform()
         }
     }
 
@@ -543,6 +779,14 @@ class PagerPageHolder(
 
     fun applyOcrBoxOpacity(opacity: Float) {
         ocrBoxOpacity = opacity
+    }
+
+    fun applyActiveOcrTextOpacity(opacity: Float) {
+        activeOcrTextOpacity = opacity
+    }
+
+    fun applyActiveOcrBgOpacity(opacity: Float) {
+        activeOcrBgOpacity = opacity
     }
 
     /**
@@ -728,3 +972,16 @@ class PagerPageHolder(
         }
     }
 }
+
+private data class LoadResult(
+    val source: BufferedSource,
+    val isAnimated: Boolean,
+    val background: Drawable?,
+    val panelBitmap: DecodedPanelBitmap?,
+)
+
+private data class DecodedPanelBitmap(
+    val bitmap: Bitmap,
+    val originalWidth: Int,
+    val originalHeight: Int,
+)

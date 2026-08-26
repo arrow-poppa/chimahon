@@ -4,6 +4,7 @@ import chimahon.anki.AnkiProfile
 import chimahon.anki.AnkiProfileStore
 import chimahon.audio.WordAudioPreferences
 import chimahon.dictionary.ko.KoreanParserMode
+import tachiyomi.core.common.preference.Preference
 import tachiyomi.core.common.preference.PreferenceStore
 import tachiyomi.core.common.preference.getEnum
 
@@ -26,6 +27,12 @@ class DictionaryPreferences(
     fun ocrBoxScaleY() = preferenceStore.getFloat("pref_ocr_box_scale_y", ocrBoxScale().get())
 
     fun ocrBoxOpacity() = preferenceStore.getFloat("pref_ocr_box_opacity", 0.0f)
+
+    /** Opacity of text characters in the currently active/tapped OCR block (0..1). */
+    fun activeOcrTextOpacity() = preferenceStore.getFloat("pref_active_ocr_text_opacity", 1.0f)
+
+    /** Opacity of background fill box in the currently active/tapped OCR block (0..1). */
+    fun activeOcrBgOpacity() = preferenceStore.getFloat("pref_active_ocr_bg_opacity", 0.7f)
 
     /** Floating screen-lookup OCR capture button size in dp. */
     fun ocrButtonSize() = preferenceStore.getInt("pref_ocr_button_size", 56)
@@ -53,6 +60,7 @@ class DictionaryPreferences(
     fun frequencyDisplayModes() = preferenceStore.getStringSet("pref_dict_frequency_display_modes", emptySet())
 
     fun groupTerms() = preferenceStore.getBoolean("pref_dict_group_terms", true)
+    fun compactGlossary() = preferenceStore.getBoolean("pref_dict_compact_glossary", false)
     fun showPitchDiagram() = preferenceStore.getBoolean("pref_dict_show_pitch_diagram", true)
     fun showPitchNumber() = preferenceStore.getBoolean("pref_dict_show_pitch_number", true)
     fun showPitchText() = preferenceStore.getBoolean("pref_dict_show_pitch_text", true)
@@ -95,7 +103,7 @@ class DictionaryPreferences(
     }
     fun customColor() = preferenceStore.getInt("pref_dictionary_custom_color", 0)
 
-    fun eInkMode() = preferenceStore.getBoolean("pref_dictionary_eink_mode", false)
+    fun eInkMode() = preferenceStore.getBoolean(Preference.appStateKey("pref_dictionary_eink_mode"), false)
 
     fun paginatedScrolling() = preferenceStore.getBoolean("pref_dictionary_paginated_scrolling", false)
 

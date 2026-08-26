@@ -4,7 +4,7 @@ import androidx.compose.runtime.Immutable
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import eu.kanade.domain.animeextension.interactor.GetAnimeExtensionLanguages
-import eu.kanade.domain.source.interactor.ToggleLanguage
+import eu.kanade.domain.source.interactor.ToggleAnimeLanguage
 import eu.kanade.domain.source.service.SourcePreferences
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.ImmutableSet
@@ -27,7 +27,7 @@ import uy.kohesive.injekt.api.get
 class AnimeExtensionFilterScreenModel(
     private val preferences: SourcePreferences = Injekt.get(),
     private val getAnimeExtensionLanguages: GetAnimeExtensionLanguages = Injekt.get(),
-    private val toggleLanguage: ToggleLanguage = Injekt.get(),
+    private val toggleLanguage: ToggleAnimeLanguage = Injekt.get(),
 ) : StateScreenModel<AnimeExtensionFilterState>(AnimeExtensionFilterState.Loading) {
 
     private val _events: Channel<AnimeExtensionFilterEvent> = Channel()
@@ -37,7 +37,7 @@ class AnimeExtensionFilterScreenModel(
         screenModelScope.launch {
             combine(
                 getAnimeExtensionLanguages.subscribe(),
-                preferences.enabledLanguages().changes(),
+                preferences.enabledAnimeLanguages().changes(),
             ) { a, b -> a to b }
                 .catch { throwable ->
                     logcat(LogPriority.ERROR, throwable)
