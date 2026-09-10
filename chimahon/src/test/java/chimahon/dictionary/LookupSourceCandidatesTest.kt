@@ -27,6 +27,45 @@ class LookupSourceCandidatesTest {
     }
 
     @Test
+    fun `fallback token parser keeps a latin token exact even in letter mode`() {
+        assertEquals(
+            listOf("BikBik"),
+            lookupSourceCandidates(
+                "BikBik",
+                AnkiProfile.SEARCH_RESOLUTION_LETTER,
+                "en",
+                useFallbackTokenParser = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `fallback token parser uses the same leading token as AI fallback`() {
+        assertEquals(
+            listOf("complete"),
+            lookupSourceCandidates(
+                "complete this task",
+                AnkiProfile.SEARCH_RESOLUTION_LETTER,
+                "en",
+                useFallbackTokenParser = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `bi dictionary entry cannot satisfy BikBik with fallback parser in letter mode`() {
+        val sources = lookupSourceCandidates(
+            "BikBik",
+            AnkiProfile.SEARCH_RESOLUTION_LETTER,
+            "en",
+            useFallbackTokenParser = true,
+        )
+        val results = lookupExactSources(sources, "en", EnglishDeinflector, 20, ::fakeExactQuery)
+
+        assertTrue(results.isEmpty())
+    }
+
+    @Test
     fun `word resolution removes complete trailing words like Yomitan`() {
         assertEquals(
             listOf("complete this task", "complete this", "complete"),

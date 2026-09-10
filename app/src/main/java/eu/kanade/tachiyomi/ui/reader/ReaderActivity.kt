@@ -2568,6 +2568,7 @@ class ReaderActivity : BaseActivity() {
                 termPaths,
                 profile.languageCode,
                 profile.searchResolution,
+                useFallbackTokenParser = true,
             )
         }
         return profile to deferred

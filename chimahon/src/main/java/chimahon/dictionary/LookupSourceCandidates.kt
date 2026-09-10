@@ -2,6 +2,7 @@ package chimahon.dictionary
 
 import chimahon.LookupResult
 import chimahon.TermResult
+import chimahon.ai.getAiFallbackToken
 import chimahon.anki.AnkiProfile
 import chimahon.ocr.effectiveSearchResolution
 import chimahon.ocr.nextWordBoundarySubstring
@@ -18,8 +19,16 @@ fun lookupSourceCandidates(
     query: String,
     searchResolution: String,
     languageCode: String,
+    useFallbackTokenParser: Boolean = false,
 ): List<String> {
     if (query.isEmpty()) return emptyList()
+
+    // The AI fallback deliberately extracts one complete, exportable token.
+    // OCR/pop-up lookups use that exact same token for installed dictionaries,
+    // so the native prefix scanner cannot turn e.g. "BikBik" into "Bi".
+    if (useFallbackTokenParser) {
+        getAiFallbackToken(query, languageCode)?.let { return listOf(it.term) }
+    }
 
     val wordResolution = effectiveSearchResolution(searchResolution, languageCode) ==
         AnkiProfile.SEARCH_RESOLUTION_WORD

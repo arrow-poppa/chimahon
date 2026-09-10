@@ -447,7 +447,7 @@ fun OcrLookupPopup(
             // internal caching so the stat call is fast.
             val termPaths = getDictionaryPaths(context, activeProfile)
             val result = runCatching {
-                lookupWithSearchResolution(repository, finalQuery, termPaths, activeProfile)
+                lookupWithFallbackTokenParser(repository, finalQuery, termPaths, activeProfile)
             }.getOrElse {
                 chimahon.DictionaryRepository.LookupResult2(
                     results = emptyList(),
@@ -462,7 +462,7 @@ fun OcrLookupPopup(
         } else {
             scope.async(Dispatchers.IO) {
                 val termPaths = getDictionaryPaths(context, activeProfile)
-                lookupWithSearchResolution(repository, finalQuery, termPaths, activeProfile)
+                lookupWithFallbackTokenParser(repository, finalQuery, termPaths, activeProfile)
             }
         }
 
@@ -973,6 +973,7 @@ fun OcrLookupPopup(
                         termPaths,
                         activeProfile.languageCode,
                         activeProfile.searchResolution,
+                        useFallbackTokenParser = true,
                     )
                 }.getOrElse {
                     chimahon.DictionaryRepository.LookupResult2(
@@ -1454,8 +1455,8 @@ fun OcrLookupPopup(
     }
 }
 
-/** Runs [repository.lookup] with Yomitan-compatible source iteration. */
-private fun lookupWithSearchResolution(
+/** Uses the same whole-token parser for real dictionaries and AI fallback. */
+private fun lookupWithFallbackTokenParser(
     repository: DictionaryRepository,
     query: String,
     termPaths: chimahon.DictionaryPaths,
@@ -1466,5 +1467,6 @@ private fun lookupWithSearchResolution(
         termPaths,
         activeProfile.languageCode,
         activeProfile.searchResolution,
+        useFallbackTokenParser = true,
     )
 }

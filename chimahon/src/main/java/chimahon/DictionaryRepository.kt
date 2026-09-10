@@ -3,6 +3,7 @@ package chimahon
 import android.os.SystemClock
 import android.util.Base64
 import android.util.Log
+import chimahon.ai.getAiFallbackToken
 import chimahon.anki.AnkiProfile
 import chimahon.dictionary.lookupExactSources
 import chimahon.dictionary.lookupSourceCandidates
@@ -64,6 +65,7 @@ class DictionaryRepository(
         paths: DictionaryPaths,
         languageCode: String = "",
         searchResolution: String = "",
+        useFallbackTokenParser: Boolean = false,
     ): LookupResult2 {
         val t0 = SystemClock.elapsedRealtime()
 
@@ -81,17 +83,28 @@ class DictionaryRepository(
             chimahon.dictionary.DeinflectorRegistry.get(effectiveLang)
         }
 
-        val sourceCandidates = lookupSourceCandidates(query, searchResolution, effectiveLang)
+        val fallbackToken = if (useFallbackTokenParser) {
+            getAiFallbackToken(query, effectiveLang)
+        } else {
+            null
+        }
+        val sourceCandidates = lookupSourceCandidates(
+            query,
+            searchResolution,
+            effectiveLang,
+            useFallbackTokenParser,
+        )
         val wordResolution = effectiveSearchResolution(searchResolution, effectiveLang) ==
             AnkiProfile.SEARCH_RESOLUTION_WORD
         val results = if (genericDeinflector != null) {
             lookupExactSources(sourceCandidates, effectiveLang, genericDeinflector, 20) { candidate ->
                 HoshiDicts.query(activeSession, candidate).toList()
             }
-        } else if (wordResolution) {
+        } else if (wordResolution || fallbackToken != null) {
             // The native hoshidicts lookup always shortens by character and its
-            // deinflector is Japanese-specific. Exact queries are required here
-            // so a prefix such as "bi" cannot satisfy the word "BikBik".
+            // deinflector is Japanese-specific. The AI-fallback parser also
+            // requires exact queries, even if the profile says `letter`, so a
+            // prefix such as "bi" cannot satisfy the token "BikBik".
             lookupExactSources(sourceCandidates, effectiveLang, null, 20) { candidate ->
                 HoshiDicts.query(activeSession, candidate).toList()
             }
