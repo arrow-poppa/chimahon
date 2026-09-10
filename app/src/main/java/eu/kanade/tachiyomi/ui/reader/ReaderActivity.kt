@@ -2563,7 +2563,12 @@ class ReaderActivity : BaseActivity() {
     ): Pair<chimahon.anki.AnkiProfile, kotlinx.coroutines.Deferred<chimahon.DictionaryRepository.LookupResult2>> {
         val (profile, termPaths) = getOrRefreshLookupPaths()
         val deferred = lifecycleScope.async(Dispatchers.Default) {
-            dictionaryRepository.lookup(lookupString.trim(), termPaths, profile.languageCode)
+            dictionaryRepository.lookup(
+                lookupString.trim(),
+                termPaths,
+                profile.languageCode,
+                profile.searchResolution,
+            )
         }
         return profile to deferred
     }

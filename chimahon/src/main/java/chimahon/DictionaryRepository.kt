@@ -3,8 +3,13 @@ package chimahon
 import android.os.SystemClock
 import android.util.Base64
 import android.util.Log
+import chimahon.anki.AnkiProfile
+import chimahon.dictionary.lookupExactSources
+import chimahon.dictionary.lookupSourceCandidates
 import chimahon.dictionary.ko.KoreanAnalyzerDeinflector
 import chimahon.dictionary.ko.KoreanParserMode
+import chimahon.ocr.effectiveSearchResolution
+import chimahon.ocr.normalizeOcrLanguageCode
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -54,7 +59,12 @@ class DictionaryRepository(
     }
 
     @Synchronized
-    fun lookup(query: String, paths: DictionaryPaths, languageCode: String = ""): LookupResult2 {
+    fun lookup(
+        query: String,
+        paths: DictionaryPaths,
+        languageCode: String = "",
+        searchResolution: String = "",
+    ): LookupResult2 {
         val t0 = SystemClock.elapsedRealtime()
 
         warmUp(paths)
@@ -63,7 +73,7 @@ class DictionaryRepository(
 
         val tLookupStart = SystemClock.elapsedRealtime()
 
-        val effectiveLang = languageCode.lowercase()
+        val effectiveLang = normalizeOcrLanguageCode(languageCode)
 
         val genericDeinflector = if (effectiveLang == "ko" && koreanParserMode() == KoreanParserMode.Analyzer) {
             KoreanAnalyzerDeinflector
@@ -71,36 +81,20 @@ class DictionaryRepository(
             chimahon.dictionary.DeinflectorRegistry.get(effectiveLang)
         }
 
-        val results = if (effectiveLang == "ja") {
-            HoshiDicts.lookup(activeSession, query, 20, 25).toList()
-        } else if (genericDeinflector != null) {
-            val finalResults = mutableListOf<chimahon.LookupResult>()
-            for (i in query.length downTo 1) {
-                val substring = query.substring(0, i)
-                val candidates = mutableMapOf<String, chimahon.dictionary.DeinflectionResult>()
-                for (preprocessed in genericDeinflector.preProcess(substring).distinct()) {
-                    for (deinflected in genericDeinflector.deinflect(preprocessed, effectiveLang)) {
-                        if (deinflected.text !in candidates) {
-                            candidates[deinflected.text] = deinflected
-                        }
-                    }
-                }
-                if (candidates.isNotEmpty()) {
-                    val substringResults = candidates.flatMap { (candidateText, deinflected) ->
-                        HoshiDicts.query(activeSession, candidateText).map { termResult ->
-                            chimahon.LookupResult(
-                                matched = substring,
-                                deinflected = candidateText,
-                                process = emptyArray(),
-                                term = termResult,
-                                preprocessorSteps = 0,
-                            )
-                        }
-                    }
-                    finalResults.addAll(substringResults)
-                }
+        val sourceCandidates = lookupSourceCandidates(query, searchResolution, effectiveLang)
+        val wordResolution = effectiveSearchResolution(searchResolution, effectiveLang) ==
+            AnkiProfile.SEARCH_RESOLUTION_WORD
+        val results = if (genericDeinflector != null) {
+            lookupExactSources(sourceCandidates, effectiveLang, genericDeinflector, 20) { candidate ->
+                HoshiDicts.query(activeSession, candidate).toList()
             }
-            finalResults.distinctBy { it.term.expression to it.term.reading }.take(20)
+        } else if (wordResolution) {
+            // The native hoshidicts lookup always shortens by character and its
+            // deinflector is Japanese-specific. Exact queries are required here
+            // so a prefix such as "bi" cannot satisfy the word "BikBik".
+            lookupExactSources(sourceCandidates, effectiveLang, null, 20) { candidate ->
+                HoshiDicts.query(activeSession, candidate).toList()
+            }
         } else {
             HoshiDicts.lookup(activeSession, query, 20, 25).toList()
         }

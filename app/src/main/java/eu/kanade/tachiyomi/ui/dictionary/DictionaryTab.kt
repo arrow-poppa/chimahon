@@ -52,7 +52,12 @@ import chimahon.HoshiDicts
 import chimahon.LookupResult
 import chimahon.anki.AnkiCardCreator
 import chimahon.anki.AnkiDroidBridge
+import chimahon.anki.AnkiProfile
 import chimahon.anki.AnkiResult
+import chimahon.dictionary.lookupExactSources
+import chimahon.dictionary.lookupSourceCandidates
+import chimahon.ocr.effectiveSearchResolution
+import chimahon.ocr.normalizeOcrLanguageCode
 import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.ui.dictionary.DictionaryPreferences
 import eu.kanade.tachiyomi.ui.dictionary.TabInfo
@@ -803,6 +808,7 @@ data object DictionaryTab : Tab {
                     query = query,
                     paths = dictionaryPaths,
                     languageCode = activeProfile.languageCode,
+                    searchResolution = activeProfile.searchResolution,
                 )
             } catch (e: Throwable) {
                 LookupUiResult(
@@ -855,7 +861,12 @@ data object DictionaryTab : Tab {
         }
 
         @Synchronized
-        fun lookup(query: String, paths: chimahon.DictionaryPaths, languageCode: String = ""): LookupUiResult {
+        fun lookup(
+            query: String,
+            paths: chimahon.DictionaryPaths,
+            languageCode: String = "",
+            searchResolution: String = "",
+        ): LookupUiResult {
             val t0 = SystemClock.elapsedRealtime()
             val ramBefore = currentUsedRamMb()
             var sessionCreateMs = 0L
@@ -874,20 +885,18 @@ data object DictionaryTab : Tab {
             }
 
             val lookupStart = SystemClock.elapsedRealtime()
-            val effectiveLang = languageCode.lowercase()
+            val effectiveLang = normalizeOcrLanguageCode(languageCode)
             val genericDeinflector = chimahon.dictionary.DeinflectorRegistry.get(effectiveLang)
-            val results = if (effectiveLang == "ja") {
-                HoshiDicts.lookup(activeSession, query, 50, 25).toList()
-            } else if (genericDeinflector != null) {
-                val preprocessed = genericDeinflector.preProcess(query)
-                val deinflected = preprocessed.flatMap { genericDeinflector.deinflect(it, effectiveLang) }
-                val candidates = deinflected.map { it.text }.distinct()
-                if (candidates.isEmpty()) {
-                    emptyList()
-                } else {
-                    candidates.flatMap { candidate ->
-                        HoshiDicts.lookup(activeSession, candidate, 50, 25).toList()
-                    }.distinctBy { it.term.expression to it.term.reading }.take(50)
+            val sourceCandidates = lookupSourceCandidates(query, searchResolution, effectiveLang)
+            val wordResolution = effectiveSearchResolution(searchResolution, effectiveLang) ==
+                AnkiProfile.SEARCH_RESOLUTION_WORD
+            val results = if (genericDeinflector != null) {
+                lookupExactSources(sourceCandidates, effectiveLang, genericDeinflector, 50) { candidate ->
+                    HoshiDicts.query(activeSession, candidate).toList()
+                }
+            } else if (wordResolution) {
+                lookupExactSources(sourceCandidates, effectiveLang, null, 50) { candidate ->
+                    HoshiDicts.query(activeSession, candidate).toList()
                 }
             } else {
                 HoshiDicts.lookup(activeSession, query, 50, 25).toList()

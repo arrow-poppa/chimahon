@@ -65,8 +65,6 @@ import chimahon.ai.createAiFallbackLookupResult
 import chimahon.ai.getAiFallbackToken
 import chimahon.ai.isAiFallbackDictionaryEntry
 import chimahon.ai.withAiFallbackExplanation
-import chimahon.ocr.effectiveSearchResolution
-import chimahon.ocr.nextWordBoundarySubstring
 import chimahon.util.ImageEncoder
 import eu.kanade.tachiyomi.ui.dictionary.buildKanjiEntryJson
 import eu.kanade.tachiyomi.ui.dictionary.DictionaryEntryWebView
@@ -970,7 +968,12 @@ fun OcrLookupPopup(
             if (cleanQuery.isNotBlank() && cleanQuery.any { it.code > 127 }) {
                 val termPaths = getDictionaryPaths(context, activeProfile)
                 val result = runCatching {
-                    repository.lookup(cleanQuery, termPaths, activeProfile.languageCode)
+                    repository.lookup(
+                        cleanQuery,
+                        termPaths,
+                        activeProfile.languageCode,
+                        activeProfile.searchResolution,
+                    )
                 }.getOrElse {
                     chimahon.DictionaryRepository.LookupResult2(
                         results = emptyList(),
@@ -1451,36 +1454,17 @@ fun OcrLookupPopup(
     }
 }
 
-/**
- * Runs [repository.lookup] honoring the profile's effective search resolution.
- * With "word" resolution (yomitan `translation.searchResolution='word'`), when
- * a query yields no results it is retried cutting at word boundaries. Returns
- * the last empty (or first non-empty) result.
- */
+/** Runs [repository.lookup] with Yomitan-compatible source iteration. */
 private fun lookupWithSearchResolution(
     repository: DictionaryRepository,
     query: String,
     termPaths: chimahon.DictionaryPaths,
     activeProfile: AnkiProfile,
 ): chimahon.DictionaryRepository.LookupResult2 {
-    fun lookupOne(text: String) = repository.lookup(text, termPaths, activeProfile.languageCode)
-
-    if (effectiveSearchResolution(activeProfile.searchResolution, activeProfile.languageCode) != AnkiProfile.SEARCH_RESOLUTION_WORD) {
-        return lookupOne(query)
-    }
-
-    var current = query
-    var result = lookupOne(current)
-    var guard = 0
-    while (
-        current.isNotEmpty() &&
-        result.error == null &&
-        result.results.isEmpty() &&
-        guard++ < 8
-    ) {
-        current = nextWordBoundarySubstring(current)
-        if (current.isEmpty()) break
-        result = lookupOne(current)
-    }
-    return result
+    return repository.lookup(
+        query,
+        termPaths,
+        activeProfile.languageCode,
+        activeProfile.searchResolution,
+    )
 }

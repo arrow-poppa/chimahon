@@ -413,7 +413,12 @@ class ChimaReaderActivity : NovelReaderActivity() {
         lookupStartTime = SystemClock.elapsedRealtime()
         pendingLookupRects.clear()
         lookupDeferred = lifecycleScope.async(Dispatchers.Default) {
-            Injekt.get<DictionaryRepository>().lookup(word.trim(), termPaths, profile.languageCode)
+            Injekt.get<DictionaryRepository>().lookup(
+                word.trim(),
+                termPaths,
+                profile.languageCode,
+                profile.searchResolution,
+            )
         }
         // Set preliminary state with tap coordinates; refined to exact
         // character position when rects arrive from JS (match path).

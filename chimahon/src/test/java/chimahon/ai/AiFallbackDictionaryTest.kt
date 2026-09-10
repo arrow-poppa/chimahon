@@ -21,6 +21,14 @@ class AiFallbackDictionaryTest {
     }
 
     @Test
+    fun `fallback preserves an unknown mixed-case word`() {
+        val token = getAiFallbackToken("BikBik is unknown", "en")
+
+        assertEquals("BikBik", token?.term)
+        assertEquals(6, token?.textLength)
+    }
+
+    @Test
     fun `fallback preserves apostrophes and strips edge separators`() {
         assertEquals("don't", getAiFallbackToken("don't stop", "en")?.term)
         assertEquals("l'homme", getAiFallbackToken("l'homme arrive", "fr")?.term)
