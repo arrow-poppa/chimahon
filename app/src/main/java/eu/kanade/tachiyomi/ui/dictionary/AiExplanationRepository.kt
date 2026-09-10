@@ -2,7 +2,11 @@ package eu.kanade.tachiyomi.ui.dictionary
 
 import chimahon.ai.AiExplanationService
 import chimahon.anki.AnkiProfile
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 
@@ -13,12 +17,14 @@ class AiExplanationRepository(
 ) {
     private val service = AiExplanationService(httpClient)
     private val cache = LinkedHashMap<CacheKey, CacheEntry>(16, 0.75f, true)
+    private val inFlight = mutableMapOf<CacheKey, CompletableDeferred<String>>()
 
     suspend fun explain(
         profile: AnkiProfile,
         target: String,
         sentence: String,
         bypassCache: Boolean = false,
+        onPartial: suspend (String) -> Unit = {},
     ): String {
         val key = CacheKey(
             profileId = profile.id,
@@ -35,19 +41,82 @@ class AiExplanationRepository(
                 cache[key]?.takeIf { now() - it.createdAt < CACHE_TTL_MS }?.let { return it.text }
             }
         }
-        val text = withContext(Dispatchers.IO) {
-            service.generate(
-                profile = profile,
-                apiKey = secretStore.get(profile.aiProvider),
-                target = target,
-                sentence = sentence,
-            )
+        val (pendingResult, ownsRequest) = if (bypassCache) {
+            null to true
+        } else {
+            synchronized(inFlight) {
+                val existing = inFlight[key]
+                if (existing != null) {
+                    existing to false
+                } else {
+                    CompletableDeferred<String>().also { inFlight[key] = it } to true
+                }
+            }
         }
-        synchronized(cache) {
-            cache[key] = CacheEntry(text, now())
-            while (cache.size > MAX_CACHE_ENTRIES) cache.remove(cache.entries.first().key)
+        if (!ownsRequest) return checkNotNull(pendingResult).await()
+
+        val apiKey = secretStore.get(profile.aiProvider)
+        val requestContext = if (profile.aiCancelPendingRequests) {
+            Dispatchers.IO
+        } else {
+            Dispatchers.IO + NonCancellable
         }
-        return text
+        return withContext(requestContext) {
+            try {
+                val text = if (profile.aiStreamResponse) {
+                    var streamedText = ""
+                    try {
+                        service.generateStream(
+                            profile = profile,
+                            apiKey = apiKey,
+                            target = target,
+                            sentence = sentence,
+                        ).collect { partial ->
+                            streamedText = partial
+                            onPartial(partial)
+                        }
+                        streamedText.trim().ifBlank { "No explanation available." }
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        // Match Yomitan: if the endpoint rejects streaming before
+                        // sending any text, transparently retry once normally.
+                        if (streamedText.isNotEmpty()) throw error
+                        service.generate(
+                            profile = profile,
+                            apiKey = apiKey,
+                            target = target,
+                            sentence = sentence,
+                        )
+                    }
+                } else {
+                    service.generate(
+                        profile = profile,
+                        apiKey = apiKey,
+                        target = target,
+                        sentence = sentence,
+                    )
+                }
+                synchronized(cache) {
+                    cache[key] = CacheEntry(text, now())
+                    while (cache.size > MAX_CACHE_ENTRIES) cache.remove(cache.entries.first().key)
+                }
+                // Complete before leaving a NonCancellable context: the original
+                // UI coroutine may already be cancelled, but another popup can
+                // immediately reuse the completed request just like Yomitan.
+                pendingResult?.complete(text)
+                text
+            } catch (error: Throwable) {
+                pendingResult?.completeExceptionally(error)
+                throw error
+            } finally {
+                if (pendingResult != null) {
+                    synchronized(inFlight) {
+                        if (inFlight[key] === pendingResult) inFlight.remove(key)
+                    }
+                }
+            }
+        }
     }
 
     suspend fun testConnection(profile: AnkiProfile): Result<Unit> = withContext(Dispatchers.IO) {

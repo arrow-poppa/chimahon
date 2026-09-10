@@ -691,6 +691,42 @@ object SettingsDictionaryScreen : SearchableSettings {
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween,
                             ) {
+                                Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                                    Text("Real Time Response")
+                                    Text(
+                                        "Stream the explanation into the popup as it is written. Falls back to a normal response if streaming cannot start.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                Switch(
+                                    checked = activeProfile.aiStreamResponse,
+                                    onCheckedChange = { value -> updateProfile { it.copy(aiStreamResponse = value) } },
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                                    Text("Cancel Unfinished Requests")
+                                    Text(
+                                        "Cancel an explanation when its popup closes or another word is opened. When off, it finishes in the background and stays cached for one minute.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                Switch(
+                                    checked = activeProfile.aiCancelPendingRequests,
+                                    onCheckedChange = { value -> updateProfile { it.copy(aiCancelPendingRequests = value) } },
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
                                 Text("Use AI when no dictionary entry exists")
                                 Switch(
                                     checked = activeProfile.aiUnknownWordFallback,

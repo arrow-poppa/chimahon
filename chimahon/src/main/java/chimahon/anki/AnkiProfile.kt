@@ -67,6 +67,8 @@ data class AnkiProfile(
     val aiPrompt: String = DEFAULT_AI_PROMPT,
     val aiTemperature: Float = 0.7f,
     val aiAutoGenerate: Boolean = true,
+    val aiStreamResponse: Boolean = false,
+    val aiCancelPendingRequests: Boolean = true,
     val aiUnknownWordFallback: Boolean = false,
     val aiOpenAiModel: String = "gpt-4o-mini",
     val aiGeminiModel: String = "gemini-2.5-flash",
@@ -128,6 +130,8 @@ data class AnkiProfile(
         put("aiPrompt", aiPrompt)
         put("aiTemperature", aiTemperature.toDouble())
         put("aiAutoGenerate", aiAutoGenerate)
+        put("aiStreamResponse", aiStreamResponse)
+        put("aiCancelPendingRequests", aiCancelPendingRequests)
         put("aiUnknownWordFallback", aiUnknownWordFallback)
         put("aiOpenAiModel", aiOpenAiModel)
         put("aiGeminiModel", aiGeminiModel)
@@ -251,6 +255,8 @@ data class AnkiProfile(
             },
             aiTemperature = json.optDouble("aiTemperature", 0.7).toFloat().coerceIn(0f, 2f),
             aiAutoGenerate = json.optBoolean("aiAutoGenerate", true),
+            aiStreamResponse = json.optBoolean("aiStreamResponse", false),
+            aiCancelPendingRequests = json.optBoolean("aiCancelPendingRequests", true),
             aiUnknownWordFallback = json.optBoolean("aiUnknownWordFallback", false),
             aiOpenAiModel = json.optString(
                 "aiOpenAiModel",

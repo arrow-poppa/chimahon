@@ -1,6 +1,11 @@
 package chimahon.ai
 
 import chimahon.anki.AnkiProfile
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -28,6 +33,13 @@ class AiExplanationService(httpClient: OkHttpClient) {
     private val client = httpClient.newBuilder()
         .callTimeout(30, TimeUnit.SECONDS)
         .build()
+    private val streamingClient = httpClient.newBuilder()
+        // Streaming calls may legitimately last longer than 30 seconds. The
+        // read timeout is a stall timeout and restarts whenever another SSE
+        // chunk arrives, matching the Yomitan implementation.
+        .callTimeout(0, TimeUnit.MILLISECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .build()
 
     suspend fun generate(
         profile: AnkiProfile,
@@ -35,17 +47,7 @@ class AiExplanationService(httpClient: OkHttpClient) {
         target: String,
         sentence: String,
     ): String {
-        require(apiKey.isNotBlank()) { "Add an API key in Dictionary settings" }
-        if (profile.aiProvider != AnkiProfile.AI_PROVIDER_CUSTOM &&
-            profile.aiProvider != AnkiProfile.AI_PROVIDER_OPENAI_COMPATIBLE
-        ) {
-            require(profile.aiModelForProvider().isNotBlank()) { "Choose an AI model" }
-        }
-        if (profile.aiProvider == AnkiProfile.AI_PROVIDER_CUSTOM ||
-            profile.aiProvider == AnkiProfile.AI_PROVIDER_OPENAI_COMPATIBLE
-        ) {
-            require(profile.aiCustomEndpoint.isNotBlank()) { "Add the full Custom API endpoint" }
-        }
+        validateConfiguration(profile, apiKey)
 
         val prompt = renderPrompt(profile.aiPrompt, target, sentence)
         val renderedProfile = profile.copy(
@@ -65,6 +67,157 @@ class AiExplanationService(httpClient: OkHttpClient) {
             AnkiProfile.AI_PROVIDER_OPENAI_COMPATIBLE -> parseCustomChatCompletionsResponse(responseBody)
             else -> parseChatCompletionsResponse(responseBody)
         }.trim().ifBlank { "No explanation available." }
+    }
+
+    /**
+     * Streams cumulative explanation text from providers which expose an SSE
+     * endpoint. Cancelling collection closes the underlying OkHttp call.
+     */
+    fun generateStream(
+        profile: AnkiProfile,
+        apiKey: String,
+        target: String,
+        sentence: String,
+    ): Flow<String> = callbackFlow {
+        try {
+            validateConfiguration(profile, apiKey)
+        } catch (error: Exception) {
+            close(error)
+            return@callbackFlow
+        }
+
+        val prompt = renderPrompt(profile.aiPrompt, target, sentence)
+        val renderedProfile = profile.copy(
+            aiSystemPrompt = renderPrompt(profile.aiSystemPrompt, target, sentence),
+        )
+        val request = try {
+            buildStreamingRequest(renderedProfile, apiKey, prompt)
+        } catch (error: Exception) {
+            close(error)
+            return@callbackFlow
+        }
+        val call = streamingClient.newCall(request)
+        call.enqueue(
+            object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    close(e)
+                }
+
+                override fun onResponse(call: Call, response: Response) {
+                    response.use {
+                        if (!it.isSuccessful) {
+                            val responseBody = it.body.string()
+                            close(IOException("AI request failed (${it.code})${providerError(responseBody)}"))
+                            return
+                        }
+
+                        try {
+                            val source = it.body.source()
+                            val dataLines = mutableListOf<String>()
+                            var full = ""
+                            var finished = false
+
+                            fun emitEvent(): Boolean {
+                                if (dataLines.isEmpty()) return true
+                                val payload = dataLines.joinToString("\n")
+                                dataLines.clear()
+                                if (payload == "[DONE]") return false
+                                val delta = when (profile.aiProvider) {
+                                    AnkiProfile.AI_PROVIDER_GEMINI -> parseGeminiStreamDelta(payload)
+                                    else -> parseOpenAiStreamDelta(payload)
+                                }
+                                if (delta.isNotEmpty()) {
+                                    full += delta
+                                    if (trySend(full).isFailure) return false
+                                }
+                                return true
+                            }
+
+                            while (!finished) {
+                                val line = source.readUtf8Line()
+                                if (line == null) {
+                                    emitEvent()
+                                    break
+                                }
+                                when {
+                                    line.isBlank() -> finished = !emitEvent()
+                                    line.startsWith("data:") -> {
+                                        dataLines += line.removePrefix("data:").removePrefix(" ")
+                                    }
+                                }
+                            }
+
+                            if (full.isBlank()) {
+                                close(IOException("AI streaming returned no text"))
+                            } else {
+                                close()
+                            }
+                        } catch (error: Exception) {
+                            close(error)
+                        }
+                    }
+                }
+            },
+        )
+        awaitClose { call.cancel() }
+    }.buffer(Channel.CONFLATED)
+
+    private fun validateConfiguration(profile: AnkiProfile, apiKey: String) {
+        require(apiKey.isNotBlank()) { "Add an API key in Dictionary settings" }
+        if (profile.aiProvider != AnkiProfile.AI_PROVIDER_CUSTOM &&
+            profile.aiProvider != AnkiProfile.AI_PROVIDER_OPENAI_COMPATIBLE
+        ) {
+            require(profile.aiModelForProvider().isNotBlank()) { "Choose an AI model" }
+        }
+        if (profile.aiProvider == AnkiProfile.AI_PROVIDER_CUSTOM ||
+            profile.aiProvider == AnkiProfile.AI_PROVIDER_OPENAI_COMPATIBLE
+        ) {
+            require(profile.aiCustomEndpoint.isNotBlank()) { "Add the full Custom API endpoint" }
+        }
+    }
+
+    private fun buildStreamingRequest(profile: AnkiProfile, apiKey: String, prompt: String): Request {
+        return when (profile.aiProvider) {
+            AnkiProfile.AI_PROVIDER_GEMINI -> {
+                val route = resolveGeminiRoute(profile.aiGeminiModel, profile.aiGeminiThinkingLevel)
+                val baseUrl = if (route.useVertexExpressRoute) VERTEX_GEMINI_BASE_URL else GEMINI_BASE_URL
+                jsonRequest(
+                    url = "$baseUrl/${route.model}:streamGenerateContent?alt=sse&key=${apiKey.trim()}",
+                    body = buildGeminiRequestBody(profile, prompt, route),
+                    headers = emptyMap(),
+                    accept = SSE_MEDIA_TYPE,
+                )
+            }
+            AnkiProfile.AI_PROVIDER_DEEPSEEK -> jsonRequest(
+                url = DEEPSEEK_CHAT_URL,
+                body = buildDeepSeekStreamingRequestBody(profile, prompt),
+                headers = mapOf("Authorization" to "Bearer ${apiKey.trim()}"),
+                accept = SSE_MEDIA_TYPE,
+            )
+            AnkiProfile.AI_PROVIDER_CUSTOM,
+            AnkiProfile.AI_PROVIDER_OPENAI_COMPATIBLE -> {
+                val endpoint = profile.aiCustomEndpoint.trim()
+                val headers = buildMap {
+                    put("Authorization", "Bearer ${apiKey.trim()}")
+                    if (isOpenRouterEndpoint(endpoint)) {
+                        put("HTTP-Referer", "https://github.com/arrow-poppa/chimahon")
+                        put("X-OpenRouter-Title", "Chimahon")
+                    }
+                }
+                jsonRequest(
+                    url = endpoint,
+                    body = buildCustomStreamingRequestBody(profile, prompt),
+                    headers = headers,
+                    accept = SSE_MEDIA_TYPE,
+                )
+            }
+            else -> jsonRequest(
+                url = OPENAI_CHAT_URL,
+                body = buildOpenAiStreamingRequestBody(profile, prompt),
+                headers = mapOf("Authorization" to "Bearer ${apiKey.trim()}"),
+                accept = SSE_MEDIA_TYPE,
+            )
+        }
     }
 
     private fun buildOpenAiChatRequest(profile: AnkiProfile, apiKey: String, prompt: String): Request {
@@ -107,11 +260,16 @@ class AiExplanationService(httpClient: OkHttpClient) {
         return jsonRequest(url, body, headers)
     }
 
-    private fun jsonRequest(url: String, body: JSONObject, headers: Map<String, String>): Request {
+    private fun jsonRequest(
+        url: String,
+        body: JSONObject,
+        headers: Map<String, String>,
+        accept: String = "application/json",
+    ): Request {
         val builder = Request.Builder()
             .url(url)
             .post(body.toString().toRequestBody(JSON_MEDIA_TYPE))
-            .header("Accept", "application/json")
+            .header("Accept", accept)
         headers.forEach { (name, value) -> builder.header(name, value) }
         return builder.build()
     }
@@ -143,6 +301,7 @@ class AiExplanationService(httpClient: OkHttpClient) {
 
     companion object {
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
+        private const val SSE_MEDIA_TYPE = "text/event-stream"
         private const val OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
         private const val DEEPSEEK_CHAT_URL = "https://api.deepseek.com/chat/completions"
         private const val GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
@@ -161,6 +320,10 @@ class AiExplanationService(httpClient: OkHttpClient) {
                 prompt = prompt,
                 temperature = profile.aiTemperature,
             )
+        }
+
+        internal fun buildOpenAiStreamingRequestBody(profile: AnkiProfile, prompt: String): JSONObject {
+            return buildOpenAiRequestBody(profile, prompt).apply { put("stream", true) }
         }
 
         internal fun buildCustomRequestBody(profile: AnkiProfile, prompt: String): JSONObject {
@@ -182,6 +345,12 @@ class AiExplanationService(httpClient: OkHttpClient) {
             return body
         }
 
+        internal fun buildCustomStreamingRequestBody(profile: AnkiProfile, prompt: String): JSONObject {
+            // Apply this last so custom request JSON cannot accidentally turn
+            // streaming back off while the Real Time Response switch is on.
+            return buildCustomRequestBody(profile, prompt).apply { put("stream", true) }
+        }
+
         internal fun buildDeepSeekRequestBody(profile: AnkiProfile, prompt: String): JSONObject {
             return buildChatCompletionsBody(
                 model = profile.aiDeepSeekModel,
@@ -198,6 +367,10 @@ class AiExplanationService(httpClient: OkHttpClient) {
                     customThinkingIntensity = "",
                 )
             }
+        }
+
+        internal fun buildDeepSeekStreamingRequestBody(profile: AnkiProfile, prompt: String): JSONObject {
+            return buildDeepSeekRequestBody(profile, prompt).apply { put("stream", true) }
         }
 
         private fun buildChatCompletionsBody(
@@ -401,6 +574,42 @@ class AiExplanationService(httpClient: OkHttpClient) {
                 throw IOException("Custom API error: $detail")
             }
             return parseChatCompletionsResponse(raw)
+        }
+
+        internal fun parseOpenAiStreamDelta(raw: String): String {
+            val json = runCatching { Json.parseToJsonElement(raw) as? JsonObject }.getOrNull() ?: return ""
+            val topLevelError = json["error"] as? JsonObject
+            if (topLevelError != null) {
+                val detail = topLevelError.string("message").ifBlank { topLevelError.toString() }
+                throw IOException("AI stream error: $detail")
+            }
+            val choice = (json["choices"] as? JsonArray)?.firstOrNull() as? JsonObject ?: return ""
+            val choiceError = choice["error"] as? JsonObject
+            if (choiceError != null) {
+                val detail = choiceError.string("message").ifBlank { choiceError.toString() }
+                throw IOException("AI stream error: $detail")
+            }
+            val delta = choice["delta"] as? JsonObject
+            return stringifyMessageContent(delta?.get("content") ?: choice["text"])
+        }
+
+        internal fun parseGeminiStreamDelta(raw: String): String {
+            val json = runCatching { Json.parseToJsonElement(raw) as? JsonObject }.getOrNull() ?: return ""
+            val error = json["error"] as? JsonObject
+            if (error != null) {
+                val detail = error.string("message").ifBlank { error.toString() }
+                throw IOException("AI stream error: $detail")
+            }
+            val candidate = (json["candidates"] as? JsonArray)?.firstOrNull() as? JsonObject ?: return ""
+            val content = candidate["content"] as? JsonObject ?: return ""
+            val parts = content["parts"] as? JsonArray ?: return ""
+            return buildString {
+                for (partElement in parts) {
+                    val part = partElement as? JsonObject ?: continue
+                    val isThought = (part["thought"] as? JsonPrimitive)?.contentOrNull == "true"
+                    if (!isThought) append(part.string("text"))
+                }
+            }
         }
 
         private fun stringifyMessageContent(content: JsonElement?): String = when (content) {

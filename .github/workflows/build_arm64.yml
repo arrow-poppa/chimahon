@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - agent/byok-ai-arm64
+      - agent/byok-ai-official-streaming
   workflow_dispatch:
 
 permissions:

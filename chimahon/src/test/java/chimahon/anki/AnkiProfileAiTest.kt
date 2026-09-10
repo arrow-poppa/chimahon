@@ -3,6 +3,7 @@ package chimahon.anki
 import org.json.JSONObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class AnkiProfileAiTest {
@@ -14,6 +15,8 @@ class AnkiProfileAiTest {
         assertEquals("gpt-4o-mini", profile.aiOpenAiModel)
         assertEquals(0.7f, profile.aiTemperature)
         assertEquals(true, profile.aiAutoGenerate)
+        assertFalse(profile.aiStreamResponse)
+        assertTrue(profile.aiCancelPendingRequests)
     }
 
     @Test
@@ -31,6 +34,8 @@ class AnkiProfileAiTest {
             aiCustomThinkingIntensity = AnkiProfile.THINKING_INTENSITY_CUSTOM,
             aiCustomThinkingIntensityValue = "2000",
             aiCustomRequestBodyJson = "{\"reasoning\":{\"exclude\":false}}",
+            aiStreamResponse = true,
+            aiCancelPendingRequests = false,
         )
 
         val restored = AnkiProfile.fromJson(original.toJson())
@@ -45,6 +50,8 @@ class AnkiProfileAiTest {
         assertEquals(original.aiCustomThinkingIntensity, restored.aiCustomThinkingIntensity)
         assertEquals(original.aiCustomThinkingIntensityValue, restored.aiCustomThinkingIntensityValue)
         assertEquals(original.aiCustomRequestBodyJson, restored.aiCustomRequestBodyJson)
+        assertTrue(restored.aiStreamResponse)
+        assertFalse(restored.aiCancelPendingRequests)
     }
 
     @Test

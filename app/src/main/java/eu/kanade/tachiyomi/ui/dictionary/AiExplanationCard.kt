@@ -1,5 +1,8 @@
 package eu.kanade.tachiyomi.ui.dictionary
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -29,13 +32,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import chimahon.anki.AnkiProfile
+import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
@@ -56,6 +63,7 @@ fun AiExplanationCard(
     if (!canShow) return
 
     val repository = remember { Injekt.get<AiExplanationRepository>() }
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val activeModel = profile.aiModelForProvider()
     var explanation by remember(profile.aiProvider, activeModel, target, sentence) { mutableStateOf("") }
@@ -67,7 +75,10 @@ fun AiExplanationCard(
     }
 
     fun generate(bypassCache: Boolean) {
-        requestJob?.cancel()
+        if (bypassCache || profile.aiCancelPendingRequests) {
+            requestJob?.cancel()
+        }
+        if (bypassCache) explanation = ""
         requestJob = scope.launch {
             loading = true
             error = null
@@ -77,6 +88,11 @@ fun AiExplanationCard(
                     target = target,
                     sentence = sentence,
                     bypassCache = bypassCache,
+                    onPartial = { partial ->
+                        withContext(Dispatchers.Main.immediate) {
+                            explanation = partial
+                        }
+                    },
                 )
             } catch (e: CancellationException) {
                 throw e
@@ -88,10 +104,20 @@ fun AiExplanationCard(
         }
     }
 
-    LaunchedEffect(active, profile.aiAutoGenerate, profile.id, target, sentence) {
+    LaunchedEffect(
+        active,
+        profile.aiAutoGenerate,
+        profile.aiStreamResponse,
+        profile.aiCancelPendingRequests,
+        profile.id,
+        target,
+        sentence,
+    ) {
         if (!active) {
-            requestJob?.cancel()
-            loading = false
+            if (profile.aiCancelPendingRequests) {
+                requestJob?.cancel()
+                loading = false
+            }
         } else if (profile.aiAutoGenerate && explanation.isBlank() && !loading) {
             generate(false)
         }
@@ -100,8 +126,16 @@ fun AiExplanationCard(
         onExplanationChanged(explanation)
         onSelectedTextChanged("")
     }
-    DisposableEffect(Unit) {
-        onDispose { requestJob?.cancel() }
+    DisposableEffect(profile.aiCancelPendingRequests) {
+        onDispose {
+            if (profile.aiCancelPendingRequests) requestJob?.cancel()
+        }
+    }
+
+    fun copyExplanation() {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("AI explanation", explanation))
+        context.toast("AI explanation copied")
     }
 
     Surface(
@@ -122,11 +156,57 @@ fun AiExplanationCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text("AI explanation", style = MaterialTheme.typography.titleSmall)
-                if (explanation.isNotBlank() && !loading) {
-                    TextButton(onClick = { generate(true) }) { Text("Regenerate") }
+                if (explanation.isNotBlank()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = ::copyExplanation) { Text("Copy") }
+                        if (!loading) {
+                            TextButton(onClick = { generate(true) }) { Text("Regenerate") }
+                        }
+                    }
                 }
             }
             when {
+                explanation.isNotBlank() -> Column(
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    BasicTextField(
+                        value = explanationField,
+                        onValueChange = { value ->
+                            if (value.text == explanation) {
+                                explanationField = value
+                                val selection = value.selection
+                                if (!selection.collapsed) {
+                                    // Keep the last non-empty selection pending when focus
+                                    // moves to the WebView's Anki button, like Yomitan does.
+                                    onSelectedTextChanged(
+                                        explanation.substring(selection.min, selection.max),
+                                    )
+                                }
+                            }
+                        },
+                        readOnly = true,
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                        cursorBrush = SolidColor(Color.Transparent),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 180.dp)
+                            .verticalScroll(rememberScrollState()),
+                    )
+                    if (loading) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+                            Text("Receiving real time response…", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    error?.let { message ->
+                        Text(message, color = MaterialTheme.colorScheme.error)
+                    }
+                }
                 loading -> Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -138,31 +218,6 @@ fun AiExplanationCard(
                     Text(error.orEmpty(), color = MaterialTheme.colorScheme.error)
                     OutlinedButton(onClick = { generate(true) }) { Text("Try again") }
                 }
-                explanation.isNotBlank() -> BasicTextField(
-                    value = explanationField,
-                    onValueChange = { value ->
-                        if (value.text == explanation) {
-                            explanationField = value
-                            val selection = value.selection
-                            if (!selection.collapsed) {
-                                // Keep the last non-empty selection pending when focus
-                                // moves to the WebView's Anki button, like Yomitan does.
-                                onSelectedTextChanged(
-                                    explanation.substring(selection.min, selection.max),
-                                )
-                            }
-                        }
-                    },
-                    readOnly = true,
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ),
-                    cursorBrush = SolidColor(Color.Transparent),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 180.dp)
-                        .verticalScroll(rememberScrollState()),
-                )
                 else -> OutlinedButton(onClick = { generate(false) }) {
                     Text("Generate explanation")
                 }

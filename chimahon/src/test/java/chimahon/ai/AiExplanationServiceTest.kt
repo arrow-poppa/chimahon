@@ -189,6 +189,46 @@ class AiExplanationServiceTest {
     }
 
     @Test
+    fun `openai compatible streaming chunks expose only answer text`() {
+        assertEquals(
+            "Answer ",
+            AiExplanationService.parseOpenAiStreamDelta(
+                """{"choices":[{"delta":{"reasoning_content":"hidden","content":"Answer "}}]}""",
+            ),
+        )
+        assertEquals(
+            "continued",
+            AiExplanationService.parseOpenAiStreamDelta(
+                """{"choices":[{"delta":{"content":[{"type":"text","text":"continued"}]}}]}""",
+            ),
+        )
+    }
+
+    @Test
+    fun `gemini streaming chunks skip thinking parts`() {
+        assertEquals(
+            "Visible answer",
+            AiExplanationService.parseGeminiStreamDelta(
+                """{"candidates":[{"content":{"parts":[{"thought":true,"text":"hidden"},{"text":"Visible answer"}]}}]}""",
+            ),
+        )
+    }
+
+    @Test
+    fun `streaming mode wins over custom request body stream false`() {
+        val profile = AnkiProfile(
+            id = "test",
+            name = "Test",
+            aiProvider = AnkiProfile.AI_PROVIDER_CUSTOM,
+            aiCustomEndpoint = "https://openrouter.ai/api/v1/chat/completions",
+            aiCustomModel = "provider/model",
+            aiCustomRequestBodyJson = "{\"stream\":false}",
+        )
+
+        assertTrue(AiExplanationService.buildCustomStreamingRequestBody(profile, "Explain it").getBoolean("stream"))
+    }
+
+    @Test
     fun `custom choice error is surfaced like Yomitan`() {
         val error = assertThrows(IOException::class.java) {
             AiExplanationService.parseCustomChatCompletionsResponse(
