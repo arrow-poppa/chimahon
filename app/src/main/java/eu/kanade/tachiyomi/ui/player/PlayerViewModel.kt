@@ -2123,8 +2123,12 @@ class PlayerViewModel @JvmOverloads constructor(
             episodesForPlayer += listOf(selectedEpisode)
         }
 
-        return episodesForPlayer.sortedWith(getEpisodeSort(anime, sortDescending = false))
+        val episodesById = episodesForPlayer.associateBy { it.id }
+        return episodesForPlayer
+            .mapNotNull { it.toDomainEpisode() }
+            .sortedWith(getEpisodeSort(anime, sortDescending = false))
             .inPlaybackOrder(anime.sorting == Anime.EPISODE_SORTING_SOURCE)
+            .mapNotNull { episodesById[it.id] }
     }
 
     fun getCurrentEpisodeIndex(): Int {
