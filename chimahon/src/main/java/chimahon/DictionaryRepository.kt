@@ -3,8 +3,8 @@ package chimahon
 import android.os.SystemClock
 import android.util.Base64
 import android.util.Log
-import chimahon.ai.getAiFallbackToken
 import chimahon.anki.AnkiProfile
+import chimahon.dictionary.fallbackAlignedLookupToken
 import chimahon.dictionary.lookupExactSources
 import chimahon.dictionary.lookupSourceCandidates
 import chimahon.dictionary.ko.KoreanAnalyzerDeinflector
@@ -84,7 +84,7 @@ class DictionaryRepository(
         }
 
         val fallbackToken = if (useFallbackTokenParser) {
-            getAiFallbackToken(query, effectiveLang)
+            fallbackAlignedLookupToken(query, effectiveLang)
         } else {
             null
         }

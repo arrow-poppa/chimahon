@@ -6,6 +6,15 @@ import chimahon.ai.getAiFallbackToken
 import chimahon.anki.AnkiProfile
 import chimahon.ocr.effectiveSearchResolution
 import chimahon.ocr.nextWordBoundarySubstring
+import chimahon.ocr.normalizeOcrLanguageCode
+
+private val nativeCharacterLookupLanguages = setOf("ja", "zh", "yue", "ko")
+
+/** Returns the fallback token only for languages where whole-token lookup is appropriate. */
+fun fallbackAlignedLookupToken(query: String, languageCode: String): String? {
+    if (normalizeOcrLanguageCode(languageCode) in nativeCharacterLookupLanguages) return null
+    return getAiFallbackToken(query, languageCode)?.term
+}
 
 /**
  * Returns the source strings that may be queried for one forward lookup.
@@ -27,7 +36,7 @@ fun lookupSourceCandidates(
     // OCR/pop-up lookups use that exact same token for installed dictionaries,
     // so the native prefix scanner cannot turn e.g. "BikBik" into "Bi".
     if (useFallbackTokenParser) {
-        getAiFallbackToken(query, languageCode)?.let { return listOf(it.term) }
+        fallbackAlignedLookupToken(query, languageCode)?.let { return listOf(it) }
     }
 
     val wordResolution = effectiveSearchResolution(searchResolution, languageCode) ==

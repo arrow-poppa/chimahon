@@ -66,6 +66,19 @@ class LookupSourceCandidatesTest {
     }
 
     @Test
+    fun `fallback token parser preserves native character lookup for Korean`() {
+        assertEquals(
+            listOf("완료", "완"),
+            lookupSourceCandidates(
+                "완료",
+                AnkiProfile.SEARCH_RESOLUTION_LETTER,
+                "ko",
+                useFallbackTokenParser = true,
+            ),
+        )
+    }
+
+    @Test
     fun `word resolution removes complete trailing words like Yomitan`() {
         assertEquals(
             listOf("complete this task", "complete this", "complete"),
