@@ -963,6 +963,9 @@
   let _lookupEnabled = false;
   let _recursiveSelectionStart = null;
   let _recursiveHighlightNodes = [];
+  let _suppressNextLookupClick = false;
+  let _lookupTouchStartedAt = 0;
+  let _lookupTouchMoved = false;
 
   function clearRecursiveHighlight() {
     _recursiveHighlightNodes.forEach((node) => node.remove());
@@ -1058,6 +1061,13 @@
       const target = e.target;
       if (!target) return;
 
+      // A long-press belongs to Android's native text selector, not recursive
+      // lookup. Some WebView versions emit a synthetic click after selection.
+      if (_suppressNextLookupClick) {
+        _suppressNextLookupClick = false;
+        return;
+      }
+
       // If tapping on a rendered kanji-tappable span, route as kanji-only lookup
       const kanjiSpan = target.closest('.kanji-tappable');
       if (kanjiSpan) {
@@ -1087,6 +1097,23 @@
       url += '&y=' + Math.round(e.clientY);
       navigateTo(url);
     }, {passive: false});
+
+    document.addEventListener('touchstart', () => {
+      _lookupTouchStartedAt = Date.now();
+      _lookupTouchMoved = false;
+    }, {capture: true, passive: true});
+    document.addEventListener('touchmove', () => {
+      _lookupTouchMoved = true;
+    }, {capture: true, passive: true});
+    document.addEventListener('touchend', () => {
+      if (_lookupTouchMoved || Date.now() - _lookupTouchStartedAt >= 350) {
+        _suppressNextLookupClick = true;
+      }
+      _lookupTouchStartedAt = 0;
+    }, {capture: true, passive: true});
+    document.addEventListener('contextmenu', () => {
+      _suppressNextLookupClick = true;
+    }, {capture: true});
 
   }
 

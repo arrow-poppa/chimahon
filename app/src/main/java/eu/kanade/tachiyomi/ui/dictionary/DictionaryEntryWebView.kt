@@ -214,7 +214,9 @@ fun DictionaryEntryWebView(
                 if (requestFocusOnMount) {
                     webView.requestFocus()
                 }
-                webView.setOnLongClickListener { false }
+                // Let WebView handle long-press itself so Android's native text
+                // selection action mode can start inside dictionary definitions.
+                webView.setOnLongClickListener(null)
                 val dictPrefs = Injekt.get<DictionaryPreferences>()
                 webView.setOnKeyListener { v, keyCode, event ->
                     if (event.action == android.view.KeyEvent.ACTION_DOWN && dictPrefs.volumeKeyNavigation().get()) {

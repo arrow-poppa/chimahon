@@ -3,6 +3,9 @@ package eu.kanade.tachiyomi.ui.dictionary
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.graphics.Color as AndroidColor
+import android.util.TypedValue
+import android.widget.TextView
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -11,9 +14,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -30,12 +30,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import chimahon.anki.AnkiProfile
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.CancellationException
@@ -70,9 +68,6 @@ fun AiExplanationCard(
     var error by remember(profile.aiProvider, activeModel, target, sentence) { mutableStateOf<String?>(null) }
     var loading by remember(profile.aiProvider, activeModel, target, sentence) { mutableStateOf(false) }
     var requestJob by remember { mutableStateOf<Job?>(null) }
-    var explanationField by remember(explanation) {
-        mutableStateOf(TextFieldValue(text = explanation, selection = TextRange.Zero))
-    }
 
     fun generate(bypassCache: Boolean) {
         if (bypassCache || profile.aiCancelPendingRequests) {
@@ -169,30 +164,31 @@ fun AiExplanationCard(
                 explanation.isNotBlank() -> Column(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    BasicTextField(
-                        value = explanationField,
-                        onValueChange = { value ->
-                            if (value.text == explanation) {
-                                explanationField = value
-                                val selection = value.selection
-                                if (!selection.collapsed) {
-                                    // Keep the last non-empty selection pending when focus
-                                    // moves to the WebView's Anki button, like Yomitan does.
-                                    onSelectedTextChanged(
-                                        explanation.substring(selection.min, selection.max),
-                                    )
-                                }
+                    val explanationColor = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
+                    val explanationTextSize = MaterialTheme.typography.bodyMedium.fontSize.value
+                    AndroidView(
+                        factory = { viewContext ->
+                            SelectableExplanationTextView(viewContext).apply {
+                                setTextIsSelectable(true)
+                                setBackgroundColor(AndroidColor.TRANSPARENT)
+                                setPadding(0, 0, 0, 0)
+                                isFocusable = true
+                                isFocusableInTouchMode = true
+                                isLongClickable = true
+                                isVerticalScrollBarEnabled = true
                             }
                         },
-                        readOnly = true,
-                        textStyle = MaterialTheme.typography.bodyMedium.copy(
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        ),
-                        cursorBrush = SolidColor(Color.Transparent),
+                        update = { textView ->
+                            textView.selectionListener = onSelectedTextChanged
+                            if (textView.text.toString() != explanation) {
+                                textView.text = explanation
+                            }
+                            textView.setTextColor(explanationColor)
+                            textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, explanationTextSize)
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 180.dp)
-                            .verticalScroll(rememberScrollState()),
+                            .heightIn(max = 180.dp),
                     )
                     if (loading) {
                         Row(
@@ -222,6 +218,20 @@ fun AiExplanationCard(
                     Text("Generate explanation")
                 }
             }
+        }
+    }
+}
+
+private class SelectableExplanationTextView(context: Context) : TextView(context) {
+    var selectionListener: ((String) -> Unit)? = null
+
+    override fun onSelectionChanged(selectionStart: Int, selectionEnd: Int) {
+        super.onSelectionChanged(selectionStart, selectionEnd)
+        val start = minOf(selectionStart, selectionEnd)
+        val end = maxOf(selectionStart, selectionEnd)
+        val currentText = text ?: return
+        if (start >= 0 && end > start && end <= currentText.length) {
+            selectionListener?.invoke(currentText.subSequence(start, end).toString())
         }
     }
 }
