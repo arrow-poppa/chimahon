@@ -134,6 +134,40 @@ class AnkiCardCreatorSentenceAudioTest {
         assertEquals(1, bridge.updateNoteCalls)
     }
 
+    @Test
+    fun `plain selected text exports only escaped visible selection`() = runTest {
+        val bridge = FakeBridge(listOf(emptyList(), emptyList()))
+        AnkiCardCreator.bridgeFactory = { bridge }
+        AnkiCardCreator.fieldMapParser = {
+            mapOf(
+                "Selected" to "{plain-selected-text}",
+                "PopupAlias" to "{popup-selection-text}",
+            )
+        }
+
+        val result = AnkiCardCreator.addToAnki(
+            context = TestContext,
+            result = lookupResult(),
+            deck = "deck",
+            model = "model",
+            fieldMapJson = "{}",
+            tags = "",
+            dupCheck = false,
+            dupScope = "collection",
+            dupAction = "prevent",
+            popupSelection = "visible <text>\nsecond line",
+        )
+
+        assertEquals(AnkiResult.Success(7), result)
+        assertEquals(
+            mapOf(
+                "Selected" to "visible &lt;text&gt;<br>second line",
+                "PopupAlias" to "visible &lt;text&gt;<br>second line",
+            ),
+            bridge.addedFields.single(),
+        )
+    }
+
     private suspend fun addCard(
         screenshotBytes: ByteArray? = null,
         sentenceAudioBytes: ByteArray? = null,
@@ -176,6 +210,7 @@ class AnkiCardCreatorSentenceAudioTest {
         val storedBytes = mutableListOf<Pair<String, ByteArray>>()
         var addNoteCalls = 0
         var updateNoteCalls = 0
+        val addedFields = mutableListOf<Map<String, String>>()
 
         override fun hasPermission(): Boolean = true
         override suspend fun ensureDefaultDeckName(): String = "deck"
@@ -193,6 +228,7 @@ class AnkiCardCreatorSentenceAudioTest {
         }
         override suspend fun addNote(deckName: String, modelName: String, fields: Map<String, String>, tags: List<String>): Long {
             addNoteCalls++
+            addedFields += fields
             return 7L
         }
         override suspend fun updateNoteFields(noteId: Long, fields: Map<String, String>) {

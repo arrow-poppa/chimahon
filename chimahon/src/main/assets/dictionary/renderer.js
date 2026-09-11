@@ -1088,14 +1088,21 @@
       navigateTo(url);
     }, {passive: false});
 
-    document.addEventListener('selectionchange', () => {
-      const selection = window.getSelection();
-      if (selection && !selection.isCollapsed) {
-        _lastSelection = selection.toString();
-      } else {
-        _lastSelection = '';
-      }
-    });
+  }
+
+  // Text selection is also used by Anki export when recursive lookup is off,
+  // so it must not depend on installTapListener(). Keep the last real range:
+  // Android may collapse it while focus moves to the add/open button.
+  document.addEventListener('selectionchange', () => {
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed) {
+      _lastSelection = selection.toString();
+    }
+  });
+
+  function resetPopupSelection() {
+    _pendingPopupSelection = '';
+    _lastSelection = '';
   }
 
   function consumePopupSelection() {
@@ -1112,6 +1119,15 @@
     if (selection && !selection.isCollapsed) {
       _pendingPopupSelection = selection.toString();
     }
+  }
+
+  function preservePopupSelectionOnButton(button) {
+    // Android WebView can collapse the native selection before `click` runs.
+    // Capture on every pre-click event and retain the last non-collapsed value
+    // from `selectionchange` as a fallback for devices with different ordering.
+    button.addEventListener('pointerdown', capturePopupSelectionForButton, {capture: true});
+    button.addEventListener('touchstart', capturePopupSelectionForButton, {capture: true, passive: true});
+    button.addEventListener('mousedown', capturePopupSelectionForButton, {capture: true});
   }
 
   function mediaCandidates(path) {
@@ -2679,7 +2695,7 @@
       ankiBtn.setAttribute('data-index', String(result.index || 0));
       ankiBtn.setAttribute('data-expression', expression);
       ankiBtn.setAttribute('data-glossary', '-1');
-      ankiBtn.addEventListener('pointerdown', capturePopupSelectionForButton);
+      preservePopupSelectionOnButton(ankiBtn);
 
       ankiBtn.onclick = (e) => {
         e.stopPropagation();
@@ -2700,7 +2716,7 @@
       bookBtn.innerHTML = ICONS.menu_book;
       bookBtn.title = 'Open in Anki';
       bookBtn.style.display = isAlreadyAdded ? '' : 'none';
-      bookBtn.addEventListener('pointerdown', capturePopupSelectionForButton);
+      preservePopupSelectionOnButton(bookBtn);
       bookBtn.onclick = (e) => {
         e.stopPropagation();
         if (typeof AnkiBridge !== 'undefined') {
@@ -2805,6 +2821,7 @@
       
       const started = performance.now();
       const root = document.documentElement;
+      resetPopupSelection();
       _wordAudioEnabled = payload.wordAudioEnabled !== false;
       _autoplayGuard = false;
       _selectedDictionaries = {};
@@ -2979,6 +2996,7 @@
 
   function clear() {
     _autoplayGuard = false;
+    resetPopupSelection();
     clearRecursiveSelection();
     resetDictionaryMediaObserver();
     const container = document.getElementById('entries');
