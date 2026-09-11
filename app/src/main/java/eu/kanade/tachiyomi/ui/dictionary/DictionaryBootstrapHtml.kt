@@ -118,22 +118,6 @@ internal fun getDictionaryBootstrapHtml(
           <style>$fontFaceCss</style>
           <style id="dictionary-styles"></style>
           <style id="chima-custom-css"></style>
-          <style id="chima-selection-css">
-            #entries .entry-body,
-            #entries .entry-body * {
-              -webkit-user-select: text !important;
-              user-select: text !important;
-            }
-            #entries button,
-            #entries .entry-icon-group,
-            #entries .dictionary-header,
-            #entries .entry-deinflection-row,
-            #entries .tag,
-            #entries .lookup-tab {
-              -webkit-user-select: none !important;
-              user-select: none !important;
-            }
-          </style>
           <script>
             window.AnkiBridge = {
               addToAnki: function(index, glossary, selectedDict, popupSelection) {
