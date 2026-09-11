@@ -2120,15 +2120,17 @@ class PlayerViewModel @JvmOverloads constructor(
         }.toMutableList()
 
         if (episodesForPlayer.all { it.id != episodeId }) {
-            episodesForPlayer += listOf(selectedEpisode)
+            // Input arrives already sorted from initEpisodeList; re-insert at the
+            // original position instead of appending so prev/next stay in order.
+            val order = episodes.mapNotNull { it.id }.withIndex().associate { it.value to it.index }
+            val selectedOrder = selectedEpisode.id?.let { order[it] } ?: Int.MAX_VALUE
+            val insertAt = episodesForPlayer.indexOfFirst { ep -> (ep.id?.let { order[it] } ?: Int.MAX_VALUE) > selectedOrder }
+                .takeIf { it >= 0 } ?: episodesForPlayer.size
+            episodesForPlayer.add(insertAt, selectedEpisode)
         }
 
-        val episodesById = episodesForPlayer.associateBy { it.id }
         return episodesForPlayer
-            .mapNotNull { it.toDomainEpisode() }
-            .sortedWith(getEpisodeSort(anime, sortDescending = false))
             .inPlaybackOrder(anime.sorting == Anime.EPISODE_SORTING_SOURCE)
-            .mapNotNull { episodesById[it.id] }
     }
 
     fun getCurrentEpisodeIndex(): Int {
