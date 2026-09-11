@@ -973,7 +973,7 @@ fun OcrLookupPopup(
                         termPaths,
                         activeProfile.languageCode,
                         activeProfile.searchResolution,
-                        useFallbackTokenParser = true,
+                        useFallbackTokenParser = activeProfile.aiEnabled && activeProfile.aiUnknownWordFallback,
                     )
                 }.getOrElse {
                     chimahon.DictionaryRepository.LookupResult2(
@@ -1467,6 +1467,6 @@ private fun lookupWithFallbackTokenParser(
         termPaths,
         activeProfile.languageCode,
         activeProfile.searchResolution,
-        useFallbackTokenParser = true,
+        useFallbackTokenParser = activeProfile.aiEnabled && activeProfile.aiUnknownWordFallback,
     )
 }

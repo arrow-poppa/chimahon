@@ -418,7 +418,7 @@ class ChimaReaderActivity : NovelReaderActivity() {
                 termPaths,
                 profile.languageCode,
                 profile.searchResolution,
-                useFallbackTokenParser = true,
+                useFallbackTokenParser = profile.aiEnabled && profile.aiUnknownWordFallback,
             )
         }
         // Set preliminary state with tap coordinates; refined to exact

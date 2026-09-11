@@ -2568,7 +2568,7 @@ class ReaderActivity : BaseActivity() {
                 termPaths,
                 profile.languageCode,
                 profile.searchResolution,
-                useFallbackTokenParser = true,
+                useFallbackTokenParser = profile.aiEnabled && profile.aiUnknownWordFallback,
             )
         }
         return profile to deferred
