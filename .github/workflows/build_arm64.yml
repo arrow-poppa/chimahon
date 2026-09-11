@@ -5,6 +5,7 @@ on:
     branches:
       - agent/byok-ai-arm64
       - agent/byok-ai-official-streaming
+      - agent/byok-ai-v2.4.0
   workflow_dispatch:
 
 permissions:
