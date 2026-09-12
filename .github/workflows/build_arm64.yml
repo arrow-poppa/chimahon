@@ -6,6 +6,7 @@ on:
       - agent/byok-ai-arm64
       - agent/byok-ai-official-streaming
       - agent/byok-ai-v2.4.0
+      - agent/byok-ai-v2.4.1
   workflow_dispatch:
 
 permissions:
