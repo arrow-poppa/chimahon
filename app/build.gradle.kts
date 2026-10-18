@@ -385,6 +385,12 @@ dependencies {
     implementation(libs.stringSimilarity)
 
     // Tests
+    androidTestImplementation(platform(compose.bom))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation(androidx.test.ext)
+    androidTestImplementation(androidx.test.uiautomator)
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
+
     testImplementation(libs.bundles.test)
     testImplementation(libs.json.jvm)
     testRuntimeOnly(libs.junit.platform.launcher)
