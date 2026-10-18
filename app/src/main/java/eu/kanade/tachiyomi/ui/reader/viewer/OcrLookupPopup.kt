@@ -68,6 +68,7 @@ import chimahon.ai.withAiFallbackExplanation
 import chimahon.util.ImageEncoder
 import eu.kanade.tachiyomi.ui.dictionary.buildKanjiEntryJson
 import eu.kanade.tachiyomi.ui.dictionary.DictionaryEntryWebView
+import eu.kanade.tachiyomi.ui.dictionary.DictionarySelectionWebView
 import eu.kanade.tachiyomi.ui.dictionary.DictionaryPreferences
 import eu.kanade.tachiyomi.ui.dictionary.getDictionaryColorScheme
 import eu.kanade.tachiyomi.ui.dictionary.rememberAiExplanation
@@ -189,7 +190,7 @@ fun OcrLookupPopup(
     val existingExpressions = currentFrame?.existingExpressions ?: emptySet()
     val entryJsons = currentFrame?.entryJsons
     var childPopupRequest by remember { mutableStateOf<RecursivePopupRequest?>(null) }
-    val childPopupWebView = remember(context) { WebView(context) }
+    val childPopupWebView = remember(context) { DictionarySelectionWebView(context) }
     var contentReady by remember(visible) { mutableStateOf(false) }
     // Tracks the lookupGeneration value at the time content was last painted.
     // Used to distinguish a fresh lookup (hide stale content) from a same-lookup

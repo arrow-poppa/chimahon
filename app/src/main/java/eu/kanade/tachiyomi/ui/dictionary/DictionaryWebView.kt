@@ -16,7 +16,7 @@ import chimahon.LookupResult
 @SuppressLint("SetJavaScriptEnabled")
 internal fun prepareDictionaryWebViewShell(
     context: Context,
-    webView: WebView = WebView(context),
+    webView: WebView = DictionarySelectionWebView(context),
     bootstrapHtml: String? = null,
     backgroundColor: Int = android.graphics.Color.TRANSPARENT,
     languageCode: String = "",

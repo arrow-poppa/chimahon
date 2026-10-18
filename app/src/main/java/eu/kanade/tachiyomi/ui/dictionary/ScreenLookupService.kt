@@ -337,7 +337,6 @@ class ScreenLookupService : Service() {
     private fun showLookupOverlay(bitmap: Bitmap) {
         val controller = overlayController ?: ScreenLookupOverlayController(
             context = this,
-            windowManager = windowManager,
             onDismiss = { setFloatingButtonVisible(true) },
         ).also { overlayController = it }
         controller.show(bitmap)

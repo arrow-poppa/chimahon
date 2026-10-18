@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.toArgb
 import eu.kanade.domain.ui.UiPreferences
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import java.lang.ref.WeakReference
 
 /**
  * Keeps a dictionary popup WebView warmed without attaching it to a reader view tree.
@@ -23,16 +24,29 @@ import uy.kohesive.injekt.api.get
 internal object DictionaryPopupWebViewWarmup {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var warmedWebView: WebView? = null
+    private var warmedOwner: WeakReference<Context>? = null
 
     fun warm(context: Context, languageCode: String = "") {
         val appContext = context.applicationContext
         runOnMain {
-            val webView = warmedWebView?.takeIf { it.parent == null } ?: createWebView(appContext).also {
-                warmedWebView = it
+            val owner = context.dictionaryActivity() ?: context
+            val cached = warmedWebView?.takeIf { it.parent == null }
+            val webView = if (cached != null && warmedOwner?.get() === owner) {
+                cached
+            } else {
+                cached?.destroy()
+                createWebView(context)
             }
-            webView.setBaseContext(appContext)
-            val shell = buildWarmShell(appContext, languageCode)
-            prepareDictionaryWebViewShell(appContext, webView, shell.bootstrapHtml, shell.backgroundColor)
+            warmedWebView = webView
+            warmedOwner = WeakReference(owner)
+            webView.setBaseContext(context)
+            try {
+                val shell = buildWarmShell(appContext, languageCode)
+                prepareDictionaryWebViewShell(appContext, webView, shell.bootstrapHtml, shell.backgroundColor)
+            } finally {
+                // The provider keeps a weak window owner; the pooled view must not retain the Activity.
+                webView.setBaseContext(appContext)
+            }
         }
     }
 
@@ -42,9 +56,19 @@ internal object DictionaryPopupWebViewWarmup {
         }
 
         val appContext = context.applicationContext
-        val webView = warmedWebView?.takeIf { it.parent == null }?.also {
-            warmedWebView = null
-        } ?: createWebView(appContext)
+        val owner = context.dictionaryActivity() ?: context
+        val cached = warmedWebView?.takeIf { it.parent == null }
+        val sameOwner = warmedOwner?.get() === owner
+        warmedWebView = null
+        warmedOwner = null
+        // Chromium binds its WindowAndroid when WebView is constructed. Rebinding only
+        // MutableContextWrapper later leaves native selection actions on the old window.
+        val webView = if (cached != null && sameOwner) {
+            cached
+        } else {
+            cached?.destroy()
+            createWebView(context)
+        }
 
         webView.setBaseContext(context)
         val shell = buildWarmShell(appContext, languageCode)
@@ -71,6 +95,7 @@ internal object DictionaryPopupWebViewWarmup {
 
             if (warmedWebView == null || warmedWebView === webView) {
                 warmedWebView = webView
+                warmedOwner = WeakReference(context.dictionaryActivity() ?: context)
             } else {
                 webView.destroy()
             }
@@ -78,7 +103,7 @@ internal object DictionaryPopupWebViewWarmup {
     }
 
     private fun createWebView(context: Context): WebView {
-        return WebView(MutableContextWrapper(context.applicationContext))
+        return DictionarySelectionWebView(context)
     }
 
     private fun WebView.setBaseContext(context: Context) {

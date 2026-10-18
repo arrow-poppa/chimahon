@@ -189,7 +189,7 @@ fun DictionaryEntryWebView(
         AndroidView<WebView>(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx: android.content.Context ->
-                val webView = webViewProvider?.invoke(ctx) ?: WebView(ctx)
+                val webView = webViewProvider?.invoke(ctx) ?: DictionarySelectionWebView(ctx)
                 (webView.parent as? android.view.ViewGroup)?.removeView(webView)
 
                 if (webView.tag !is DictionaryWebViewState) {

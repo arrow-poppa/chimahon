@@ -438,7 +438,7 @@ androidComponents {
     onVariants(selector().withBuildType("debug")) { variant ->
         variant.outputs.forEach { output ->
             output.enabled.set(
-                output.filters.any {
+                nativeSelectionTests || output.filters.any {
                     it.filterType == FilterConfiguration.FilterType.ABI && it.identifier == "arm64-v8a"
                 },
             )

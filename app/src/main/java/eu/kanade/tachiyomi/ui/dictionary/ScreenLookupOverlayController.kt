@@ -2,13 +2,9 @@ package eu.kanade.tachiyomi.ui.dictionary
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.PixelFormat
 import android.os.Build
-import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
-import android.view.ViewGroup
-import android.view.WindowManager
 import android.webkit.WebView
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
@@ -70,10 +66,10 @@ private const val TAP_HINT_DURATION_MS = 1_200L
 
 internal class ScreenLookupOverlayController(
     private val context: Context,
-    private val windowManager: WindowManager,
     private val onDismiss: () -> Unit,
 ) {
     private var overlayView: ComposeView? = null
+    private var overlayDialog: DictionaryOverlayDialog? = null
     private var lifecycleOwner: OverlayLifecycleOwner? = null
     private var screenshot: Bitmap? = null
     private var cachedWebView: WebView? = null
@@ -135,25 +131,10 @@ internal class ScreenLookupOverlayController(
             }
         }
 
-        val params = WindowManager.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-            PixelFormat.TRANSLUCENT,
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                fitInsetsTypes = 0
-            } else {
-                @Suppress("DEPRECATION")
-                flags = flags or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-            }
-            layoutInDisplayCutoutMode =
-                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
-        }
-
-        windowManager.addView(view, params)
+        val dialog = DictionaryOverlayDialog(context, ::handleBack)
+        dialog.setContentView(view)
+        dialog.show()
+        overlayDialog = dialog
         overlayView = view
         view.requestFocus()
         registerBackCallback(view)
@@ -162,9 +143,10 @@ internal class ScreenLookupOverlayController(
     fun dismiss(recycleScreenshot: Boolean = true, notify: Boolean = true) {
         overlayView?.let { view ->
             unregisterBackCallback(view)
-            runCatching { windowManager.removeView(view) }
+            runCatching { overlayDialog?.dismiss() }
         }
         overlayView = null
+        overlayDialog = null
         overlayBackHandler = null
         lifecycleOwner?.performDestroy()
         lifecycleOwner = null
