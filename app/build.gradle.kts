@@ -45,6 +45,15 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    val previewSigning = providers.environmentVariable("CHIMAHON_PREVIEW_KEYSTORE_PATH").orNull?.let { keystorePath ->
+        signingConfigs.create("forkPreview") {
+            storeFile = file(keystorePath)
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         val debug by getting {
             applicationIdSuffix = ".dev"
@@ -90,7 +99,7 @@ android {
             applicationIdSuffix = ".beta"
 
             versionNameSuffix = debug.versionNameSuffix
-            signingConfig = debug.signingConfig
+            signingConfig = previewSigning ?: debug.signingConfig
 
             matchingFallbacks.addAll(commonMatchingFallbacks)
 
