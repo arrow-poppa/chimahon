@@ -50,96 +50,98 @@ fun rememberAiExplanation(
     hasDictionaryResults: Boolean,
     active: Boolean,
     onExplanationChanged: (String) -> Unit = {},
-): AiExplanationContent? = key(lookupId) {
+): AiExplanationContent? {
     val canShow = profile.aiEnabled &&
         target.isNotBlank() &&
         (hasDictionaryResults || profile.aiUnknownWordFallback)
-    if (!canShow) return@key null
+    if (!canShow) return null
 
-    val repository = remember { Injekt.get<AiExplanationRepository>() }
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val activeModel = profile.aiModelForProvider()
-    var explanation by remember(profile.aiProvider, activeModel, target, sentence) { mutableStateOf("") }
-    var error by remember(profile.aiProvider, activeModel, target, sentence) { mutableStateOf<String?>(null) }
-    var loading by remember(profile.aiProvider, activeModel, target, sentence) { mutableStateOf(false) }
-    var requestJob by remember { mutableStateOf<Job?>(null) }
+    return key(lookupId) {
+        val repository = remember { Injekt.get<AiExplanationRepository>() }
+        val context = LocalContext.current
+        val scope = rememberCoroutineScope()
+        val activeModel = profile.aiModelForProvider()
+        var explanation by remember(profile.aiProvider, activeModel, target, sentence) { mutableStateOf("") }
+        var error by remember(profile.aiProvider, activeModel, target, sentence) { mutableStateOf<String?>(null) }
+        var loading by remember(profile.aiProvider, activeModel, target, sentence) { mutableStateOf(false) }
+        var requestJob by remember { mutableStateOf<Job?>(null) }
 
-    fun generate(bypassCache: Boolean) {
-        if (bypassCache || profile.aiCancelPendingRequests) {
-            requestJob?.cancel()
-        }
-        if (bypassCache) explanation = ""
-        requestJob = scope.launch {
-            loading = true
-            error = null
-            try {
-                explanation = repository.explain(
-                    profile = profile,
-                    target = target,
-                    sentence = sentence,
-                    bypassCache = bypassCache,
-                    onPartial = { partial ->
-                        withContext(Dispatchers.Main.immediate) {
-                            explanation = partial
-                        }
-                    },
-                )
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                error = e.message ?: "AI explanation failed"
-            } finally {
-                loading = false
-            }
-        }
-    }
-
-    LaunchedEffect(
-        active,
-        profile.aiAutoGenerate,
-        profile.aiStreamResponse,
-        profile.aiCancelPendingRequests,
-        profile.id,
-        target,
-        sentence,
-    ) {
-        if (!active) {
-            if (profile.aiCancelPendingRequests) {
+        fun generate(bypassCache: Boolean) {
+            if (bypassCache || profile.aiCancelPendingRequests) {
                 requestJob?.cancel()
-                loading = false
             }
-        } else if (profile.aiAutoGenerate && explanation.isBlank() && !loading) {
-            generate(false)
-        }
-    }
-    LaunchedEffect(explanation) {
-        onExplanationChanged(explanation)
-    }
-    DisposableEffect(profile.aiCancelPendingRequests) {
-        onDispose {
-            if (profile.aiCancelPendingRequests) requestJob?.cancel()
-        }
-    }
-
-    fun copyExplanation() {
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("AI explanation", explanation))
-        context.toast("AI explanation copied")
-    }
-
-    AiExplanationContent(
-        lookupId = lookupId,
-        text = explanation,
-        loading = loading,
-        error = error,
-        initiallyCollapsed = profile.aiExplanationCollapsed ||
-            profile.dictionaryCollapseMode == AnkiProfile.DICTIONARY_COLLAPSE_COLLAPSE_ALL,
-        onAction = { action ->
-            when (action) {
-                "copy" -> copyExplanation()
-                "generate" -> if (!loading) generate(explanation.isNotBlank() || error != null)
+            if (bypassCache) explanation = ""
+            requestJob = scope.launch {
+                loading = true
+                error = null
+                try {
+                    explanation = repository.explain(
+                        profile = profile,
+                        target = target,
+                        sentence = sentence,
+                        bypassCache = bypassCache,
+                        onPartial = { partial ->
+                            withContext(Dispatchers.Main.immediate) {
+                                explanation = partial
+                            }
+                        },
+                    )
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    error = e.message ?: "AI explanation failed"
+                } finally {
+                    loading = false
+                }
             }
-        },
-    )
+        }
+
+        LaunchedEffect(
+            active,
+            profile.aiAutoGenerate,
+            profile.aiStreamResponse,
+            profile.aiCancelPendingRequests,
+            profile.id,
+            target,
+            sentence,
+        ) {
+            if (!active) {
+                if (profile.aiCancelPendingRequests) {
+                    requestJob?.cancel()
+                    loading = false
+                }
+            } else if (profile.aiAutoGenerate && explanation.isBlank() && !loading) {
+                generate(false)
+            }
+        }
+        LaunchedEffect(explanation) {
+            onExplanationChanged(explanation)
+        }
+        DisposableEffect(profile.aiCancelPendingRequests) {
+            onDispose {
+                if (profile.aiCancelPendingRequests) requestJob?.cancel()
+            }
+        }
+
+        fun copyExplanation() {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("AI explanation", explanation))
+            context.toast("AI explanation copied")
+        }
+
+        AiExplanationContent(
+            lookupId = lookupId,
+            text = explanation,
+            loading = loading,
+            error = error,
+            initiallyCollapsed = profile.aiExplanationCollapsed ||
+                profile.dictionaryCollapseMode == AnkiProfile.DICTIONARY_COLLAPSE_COLLAPSE_ALL,
+            onAction = { action ->
+                when (action) {
+                    "copy" -> copyExplanation()
+                    "generate" -> if (!loading) generate(explanation.isNotBlank() || error != null)
+                }
+            },
+        )
+    }
 }
