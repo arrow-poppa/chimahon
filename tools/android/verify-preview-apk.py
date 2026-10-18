@@ -20,9 +20,9 @@ def android_tools():
 
 
 def check_certificate(output, expected):
-    # APK v3.1 reports SDK ranges instead of ordinal signer numbers.
+    # SDK tools report ordinal, SDK-range or signature-scheme signer labels.
     certificates = set(value.lower() for value in re.findall(
-        r'^Signer (?:#\d+|\([^\r\n]+\)) certificate SHA-256 digest:\s*([0-9a-fA-F]{64})\s*$', output, re.M))
+        r'^(?:V\d+(?:\.\d+)? )?Signer(?: #\d+| \([^\r\n]+\))?:? certificate SHA-256 digest:\s*([0-9a-fA-F]{64})\s*$', output, re.M))
     if not certificates:
         raise SystemExit('Could not identify APK signer certificates in apksigner output')
     if certificates != {expected}:

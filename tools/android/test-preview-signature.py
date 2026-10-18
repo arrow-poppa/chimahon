@@ -14,6 +14,16 @@ class PreviewCertificateTest(unittest.TestCase):
     def test_ordinal_signer(self):
         check_certificate(f'Signer #1 certificate SHA-256 digest: {EXPECTED}\n', EXPECTED)
 
+    def test_signature_scheme_label_from_installed_android_sdk(self):
+        check_certificate(f'V3.0 Signer: certificate SHA-256 digest: {EXPECTED}\n', EXPECTED)
+
+    def test_multiple_signature_schemes_require_the_same_certificate(self):
+        output = (f'V2 Signer #1: certificate SHA-256 digest: {EXPECTED}\n'
+                  f'V3.0 Signer: certificate SHA-256 digest: {EXPECTED}\n')
+        check_certificate(output, EXPECTED)
+        with self.assertRaises(SystemExit):
+            check_certificate(output + f'V3.1 Signer: certificate SHA-256 digest: {OTHER}\n', EXPECTED)
+
     def test_sdk_ranges_and_repeated_certificate(self):
         output = (f'Signer (minSdkVersion=33, maxSdkVersion=2147483647) certificate SHA-256 digest: {EXPECTED}\n'
                   f'Signer (minSdkVersion=28, maxSdkVersion=32) certificate SHA-256 digest: {EXPECTED}\n')
