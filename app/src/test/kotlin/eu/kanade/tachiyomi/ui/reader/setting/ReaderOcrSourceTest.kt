@@ -50,6 +50,20 @@ class ReaderOcrSourceTest {
     }
 
     @Test
+    fun `detector selection follows the effective recognizer and preserves Manga and Mokuro`() {
+        assertTrue(ReaderOcrSource.AUTOMATIC.usesGenericPaddleDetector(OcrEngineType.PADDLE_LATIN))
+        assertFalse(ReaderOcrSource.AUTOMATIC.usesGenericPaddleDetector(OcrEngineType.PADDLE))
+        assertFalse(ReaderOcrSource.MOKURO.usesGenericPaddleDetector(OcrEngineType.PADDLE_LATIN))
+        assertFalse(ReaderOcrSource.PADDLE.usesGenericPaddleDetector(OcrEngineType.PADDLE_LATIN))
+        assertFalse(ReaderOcrSource.GOOGLE_LENS.usesGenericPaddleDetector(OcrEngineType.PADDLE_LATIN))
+        assertTrue(
+            ReaderOcrSource.entries
+                .filter { it.recognitionEngine?.paddleRecognizer != null && it != ReaderOcrSource.PADDLE }
+                .all { it.usesGenericPaddleDetector(OcrEngineType.CLOUD) },
+        )
+    }
+
+    @Test
     fun `preference key is app state scoped per manga`() {
         val firstMangaKey = readerOcrSourcePreferenceKey(1)
         val secondMangaKey = readerOcrSourcePreferenceKey(2)

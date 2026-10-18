@@ -112,6 +112,7 @@ import eu.kanade.tachiyomi.data.notification.NotificationReceiver
 import eu.kanade.tachiyomi.data.notification.Notifications
 import eu.kanade.tachiyomi.databinding.ReaderActivityBinding
 import eu.kanade.tachiyomi.source.model.Page
+import eu.kanade.tachiyomi.data.ocr.OcrEngineType
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.base.activity.BaseActivity
 import eu.kanade.tachiyomi.ui.dictionary.DictionaryPopupWebViewWarmup
@@ -128,6 +129,7 @@ import eu.kanade.tachiyomi.ui.reader.model.ViewerChapters
 import eu.kanade.tachiyomi.ui.reader.viewer.ReaderPageImageView
 import chimahon.ocr.CropPresets
 import chimahon.ocr.OcrBitmapDecoder
+import chimahon.ocr.PaddleDetector
 import chimahon.util.ImageEncoder
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -1256,7 +1258,18 @@ class ReaderActivity : BaseActivity() {
 
     private fun selectOcrSourceFromReader(source: ReaderOcrSource) {
         if (!viewModel.setOcrSource(source) || !viewModel.isOcrEnabled()) return
+        refreshOcrViewer()
+    }
 
+    private fun selectPaddleDetectorFromReader(detector: PaddleDetector) {
+        val preference = Injekt.get<DictionaryPreferences>().paddleDetector()
+        if (preference.get() == detector.id) return
+        preference.set(detector.id)
+        if (viewModel.isOcrEnabled()) refreshOcrViewer()
+    }
+
+    private fun refreshOcrViewer() {
+        dismissReaderOcrOverlays()
         when (val viewer = viewModel.state.value.viewer) {
             is PagerViewer -> {
                 viewer.setOcrEnabled(false)
@@ -1475,6 +1488,11 @@ class ReaderActivity : BaseActivity() {
 
         // Chimahon: OCR overlay preference
         val ocrOverlayEnabled by readerPreferences.ocrOverlayEnabled().collectAsState()
+        val dictionaryPreferences = remember { Injekt.get<DictionaryPreferences>() }
+        val detectorPreference by dictionaryPreferences.paddleDetector().collectAsState()
+        val enginePreference by dictionaryPreferences.ocrEngine().collectAsState()
+        val detector = PaddleDetector.fromPreference(detectorPreference)
+            .takeIf { BuildConfig.HAS_LOCAL_OCR && state.ocrSource.usesGenericPaddleDetector(OcrEngineType.fromPreference(enginePreference)) }
         val ocrEnabled = ocrOverlayEnabled && viewModel.isOcrAllowedForCurrentManga()
 
         ReaderAppBars(
@@ -1522,6 +1540,8 @@ class ReaderActivity : BaseActivity() {
             mokuroAvailable = viewModel.isMokuroAvailable(),
             onToggleOcr = ::toggleOcrFromReader,
             onSelectOcrSource = ::selectOcrSourceFromReader,
+            paddleDetector = detector,
+            onSelectPaddleDetector = ::selectPaddleDetectorFromReader,
             onClickSettings = viewModel::openSettingsDialog,
             onClickMangaStats = viewModel::openMangaStatsSheet,
             // SY -->

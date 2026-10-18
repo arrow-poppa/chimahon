@@ -7,6 +7,7 @@ import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -24,6 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import chimahon.ocr.PaddleDetector
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.tachiyomi.BuildConfig
@@ -49,6 +51,8 @@ fun ReaderTopBar(
     ocrLoading: Boolean = false,
     ocrSource: ReaderOcrSource = ReaderOcrSource.AUTOMATIC,
     mokuroAvailable: Boolean = false,
+    paddleDetector: PaddleDetector? = null,
+    onSelectPaddleDetector: (PaddleDetector) -> Unit = {},
     onToggleOcr: (() -> Unit)? = null,
     onSelectOcrSource: (ReaderOcrSource) -> Unit = {},
 ) {
@@ -67,6 +71,8 @@ fun ReaderTopBar(
                     mokuroAvailable = mokuroAvailable,
                     onToggleOcr = it,
                     onSelectSource = onSelectOcrSource,
+                    paddleDetector = paddleDetector,
+                    onSelectPaddleDetector = onSelectPaddleDetector,
                 )
             }
             AppBarActions(
@@ -128,6 +134,8 @@ private fun OcrSourceAction(
     mokuroAvailable: Boolean,
     onToggleOcr: () -> Unit,
     onSelectSource: (ReaderOcrSource) -> Unit,
+    paddleDetector: PaddleDetector?,
+    onSelectPaddleDetector: (PaddleDetector) -> Unit,
 ) {
     var sourceMenuExpanded by remember { mutableStateOf(false) }
     val actionTitle = stringResource(
@@ -185,6 +193,23 @@ private fun OcrSourceAction(
                             }
                         },
                     )
+                }
+                if (paddleDetector != null) {
+                    HorizontalDivider()
+                    PaddleDetector.entries.forEach { detector ->
+                        DropdownMenuItem(
+                            text = { Text("Detector: ${detector.label}") },
+                            onClick = {
+                                sourceMenuExpanded = false
+                                onSelectPaddleDetector(detector)
+                            },
+                            trailingIcon = {
+                                if (detector == paddleDetector) {
+                                    Icon(imageVector = Icons.Outlined.Check, contentDescription = null)
+                                }
+                            },
+                        )
+                    }
                 }
             }
         }

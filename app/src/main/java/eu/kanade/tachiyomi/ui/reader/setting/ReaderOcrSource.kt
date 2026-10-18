@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.ui.reader.setting
 
+import chimahon.ocr.PaddleRecognizer
 import eu.kanade.tachiyomi.data.ocr.OcrEngineType
 
 enum class ReaderOcrSource(
@@ -47,6 +48,12 @@ enum class ReaderOcrSource(
         get() = usesPersistentCache || persistentCacheVariant != null
 
     fun cacheVariant(selection: eu.kanade.tachiyomi.data.ocr.OcrSelection): String? = selection.cacheVariant ?: persistentCacheVariant
+
+    fun usesGenericPaddleDetector(defaultEngine: OcrEngineType): Boolean {
+        if (this == MOKURO) return false
+        val recognizer = (recognitionEngine ?: defaultEngine).paddleRecognizer
+        return recognizer != null && recognizer != PaddleRecognizer.MANGA
+    }
 
     companion object {
         fun availableSources(localOcrAvailable: Boolean, mokuroAvailable: Boolean): List<ReaderOcrSource> {

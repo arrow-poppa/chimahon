@@ -1,7 +1,8 @@
 # Lookitan OCR models for Chimahon
 
-The settings and reader source menu select recognition models manually. The separate
-OCR detector setting selects PP-OCRv6 Tiny (default) or Small for all new recognizers.
+The settings and reader source menu select recognition models manually. The
+OCR detector selector in settings and the reader menu selects PP-OCRv6 Tiny (default)
+or Small for all new recognizers, including Automatic mode when its engine uses them.
 Both run on CPU. The existing Manga option keeps its own detector and thresholds.
 The dictionary profile still determines language and reading rules.
 

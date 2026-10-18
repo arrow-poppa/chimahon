@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import chimahon.ocr.PaddleDetector
 import eu.kanade.presentation.reader.components.ChapterNavigator
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderOcrSource
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderOrientation
@@ -107,6 +108,8 @@ fun ReaderAppBars(
     ocrLoading: Boolean = false,
     ocrSource: ReaderOcrSource = ReaderOcrSource.AUTOMATIC,
     mokuroAvailable: Boolean = false,
+    paddleDetector: PaddleDetector? = null,
+    onSelectPaddleDetector: (PaddleDetector) -> Unit = {},
     onToggleOcr: (() -> Unit)? = null,
     onSelectOcrSource: (ReaderOcrSource) -> Unit = {},
     // Chimahon <--
@@ -148,6 +151,8 @@ fun ReaderAppBars(
                     mokuroAvailable = mokuroAvailable,
                     onToggleOcr = onToggleOcr,
                     onSelectOcrSource = onSelectOcrSource,
+                    paddleDetector = paddleDetector,
+                    onSelectPaddleDetector = onSelectPaddleDetector,
                     // Chimahon <--
                 )
                 // SY -->
