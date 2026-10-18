@@ -63,6 +63,7 @@ internal object DictionaryPopupWebViewWarmup {
             webView.isLongClickable = false
             webView.isFocusable = false
             webView.isFocusableInTouchMode = false
+            webView.setOnTouchListener(null)
             webView.setOnKeyListener(null)
             webView.setOnLongClickListener(null)
             webView.resetDictionaryCallbacks()

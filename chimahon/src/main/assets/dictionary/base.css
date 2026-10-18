@@ -89,6 +89,16 @@ body {
   font-size: 1em;
 }
 
+/* Definitions remain selectable even when surrounding dictionary chrome is not. */
+.headword,
+.definition-item-content,
+.gloss-content,
+.gloss-plain-text,
+.structured-content {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 .entries {
   padding: 4px 12px 4px 4px;
   overflow-anchor: none;

@@ -1054,8 +1054,9 @@
     return JSON.stringify({ x: left, y: top, width: right - left, height: bottom - top });
   }
 
-  let _touchStartX = 0;
-  let _touchStartY = 0;
+  let _touchGesture = null;
+  let _suppressLookupUntil = 0;
+  const LONG_PRESS_THRESHOLD = 450;
   const TAP_MOVE_THRESHOLD = 10;  // px — ignore if finger moved too far (scroll)
 
   function installTapListener() {
@@ -1064,7 +1065,9 @@
 
     document.addEventListener('click', (e) => {
       const target = e.target;
-      if (!target) return;
+      if (!target || !_lookupEnabled || performance.now() < _suppressLookupUntil) return;
+      // Selection takes priority even on kanji spans. A long press is not a lookup tap.
+      if (hasPopupTextSelection()) return;
 
       // If tapping on a rendered kanji-tappable span, route as kanji-only lookup
       const kanjiSpan = target.closest('.kanji-tappable');
@@ -1073,9 +1076,6 @@
         e.stopPropagation();
         return;
       }
-
-      // If the user has an active text selection, don't trigger a lookup.
-      if (window.getSelection().toString().trim().length > 0) return;
 
       // Skip interactive controls — buttons, dict tags, inflection toggles, etc.
       if (target.closest('.ai-explanation, button, .anki-add-btn, .lookup-tab, .entry-deinflection-row, .tag, .dictionary-header, details, summary, a, .gloss-link, .gloss-sc-a')) return;
@@ -1101,10 +1101,16 @@
   // Text selection is also used by Anki export when recursive lookup is off,
   // so it must not depend on installTapListener(). Keep the last real range:
   // Android may collapse it while focus moves to the add/open button.
+  function hasPopupTextSelection() {
+    const selection = window.getSelection();
+    return !!selection && !selection.isCollapsed;
+  }
+
   document.addEventListener('selectionchange', () => {
     const selection = window.getSelection();
     if (selection && !selection.isCollapsed) {
       _lastSelection = selection.toString();
+      if (_touchGesture) _touchGesture.selecting = true;
     }
   });
 
@@ -3291,21 +3297,50 @@
   }, { passive: false });
 
   window.addEventListener('touchstart', (e) => {
-    if (!_isPaginatedScrolling() || e.touches.length !== 1) return;
-    _touchStartY = e.touches[0].clientY;
+    _touchGesture = null;
+    if (e.touches.length !== 1) return;
+    _touchGesture = {
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+      startedAt: performance.now(),
+      selecting: hasPopupTextSelection(),
+      paging: false,
+      moved: false,
+    };
   }, { passive: true });
 
   window.addEventListener('touchmove', (e) => {
-    if (!_isPaginatedScrolling()) return;
-    e.preventDefault();
+    const gesture = _touchGesture;
+    if (!gesture || e.touches.length !== 1) return;
+    const dx = e.touches[0].clientX - gesture.x;
+    const dy = e.touches[0].clientY - gesture.y;
+    const heldForSelection = !gesture.moved && performance.now() - gesture.startedAt >= LONG_PRESS_THRESHOLD;
+    gesture.moved ||= Math.hypot(dx, dy) >= TAP_MOVE_THRESHOLD;
+    if (hasPopupTextSelection() || gesture.selecting || heldForSelection) {
+      gesture.selecting = true;
+      gesture.paging = false;
+      return;
+    }
+    // Leave jitter, horizontal gestures and native selection handles to WebView.
+    if (!_isPaginatedScrolling() || Math.abs(dy) < TAP_MOVE_THRESHOLD || Math.abs(dy) <= Math.abs(dx)) return;
+    gesture.paging = e.cancelable;
+    if (gesture.paging) e.preventDefault();
   }, { passive: false });
 
   window.addEventListener('touchend', (e) => {
-    if (!_isPaginatedScrolling() || _touchStartY === 0) return;
-    const endY = e.changedTouches[0].clientY;
-    const delta = _touchStartY - endY;
-    _touchStartY = 0;
+    const gesture = _touchGesture;
+    _touchGesture = null;
+    if (!gesture) return;
+    const selecting = gesture.selecting || hasPopupTextSelection() || (!gesture.moved && performance.now() - gesture.startedAt >= LONG_PRESS_THRESHOLD);
+    if (selecting || gesture.moved) _suppressLookupUntil = performance.now() + 500;
+    if (!_isPaginatedScrolling() || !gesture.paging || selecting || !e.changedTouches.length) return;
+    const delta = gesture.y - e.changedTouches[0].clientY;
     if (Math.abs(delta) < 15) return;
     _scrollByPopupHeight(delta > 0 ? 1 : -1);
+  }, { passive: true });
+
+  window.addEventListener('touchcancel', () => {
+    _touchGesture = null;
+    _suppressLookupUntil = performance.now() + 500;
   }, { passive: true });
 })();

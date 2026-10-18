@@ -1361,7 +1361,9 @@ fun OcrLookupPopup(
                 offset = IntOffset(layoutResult.x.roundToInt(), layoutResult.y.roundToInt()),
                 onDismissRequest = { dismissPopup() },
                 properties = PopupProperties(
-                    focusable = dismissOnOutsideTap,
+                    // Native text selection needs focus; outside taps must still reach the reader.
+                    flags = android.view.WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
+                        android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
                     dismissOnClickOutside = dismissOnOutsideTap,
                 ),
             ) {

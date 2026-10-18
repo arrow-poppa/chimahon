@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.ui.dictionary
 import android.annotation.SuppressLint
 import android.os.SystemClock
 import android.util.Log
+import android.view.MotionEvent
 import android.webkit.WebView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -28,7 +29,7 @@ import tachiyomi.presentation.core.util.collectAsState
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
-@SuppressLint("SetJavaScriptEnabled")
+@SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
 @Composable
 fun DictionaryEntryWebView(
     results: List<LookupResult>,
@@ -216,6 +217,11 @@ fun DictionaryEntryWebView(
                     webView.requestFocus()
                 }
                 webView.setOnLongClickListener { false }
+                // Observe focus only; WebView still owns long press, selection handles and clicks.
+                webView.setOnTouchListener { view, event ->
+                    if (event.actionMasked == MotionEvent.ACTION_DOWN && !view.hasFocus()) view.requestFocus()
+                    false
+                }
                 val dictPrefs = Injekt.get<DictionaryPreferences>()
                 webView.setOnKeyListener { v, keyCode, event ->
                     if (event.action == android.view.KeyEvent.ACTION_DOWN && dictPrefs.volumeKeyNavigation().get()) {
