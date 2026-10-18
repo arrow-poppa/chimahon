@@ -43,7 +43,14 @@ def verify_apk(apk, tools, expected):
                                capture_output=True, text=True)
     if signature.returncode:
         raise SystemExit('APK signature verification failed')
-    check_certificate(signature.stdout, expected)
+    try:
+        check_certificate(signature.stdout + signature.stderr, expected)
+    except SystemExit:
+        print(f'apksigner output sizes: stdout={len(signature.stdout)}, stderr={len(signature.stderr)}', flush=True)
+        for line in (signature.stdout + signature.stderr).splitlines():
+            if 'SHA-256' in line or 'SHA256' in line:
+                print(line, flush=True)
+        raise
     badging = subprocess.run([str(tools / 'aapt2'), 'dump', 'badging', str(apk)],
                             capture_output=True, text=True)
     package = re.search(r"^package: name='([^']+)' versionCode='(\d+)'", badging.stdout, re.M)
