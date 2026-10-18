@@ -23,8 +23,6 @@ jobs:
     name: Build arm64-v8a preview
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    env:
-      CHIMAHON_PREVIEW_KEYSTORE_PATH: ${{ runner.temp }}/chimahon-preview.keystore
 
     steps:
       - name: Checkout
@@ -57,6 +55,8 @@ jobs:
             echo "::error::CHIMAHON_PREVIEW_KEYSTORE_BASE64 is not configured"
             exit 1
           fi
+          export CHIMAHON_PREVIEW_KEYSTORE_PATH="$RUNNER_TEMP/chimahon-preview.keystore"
+          printf 'CHIMAHON_PREVIEW_KEYSTORE_PATH=%s\n' "$CHIMAHON_PREVIEW_KEYSTORE_PATH" >> "$GITHUB_ENV"
           printf '%s' "$CHIMAHON_PREVIEW_KEYSTORE_BASE64" | base64 --decode > "$CHIMAHON_PREVIEW_KEYSTORE_PATH"
           chmod 600 "$CHIMAHON_PREVIEW_KEYSTORE_PATH"
           certificate_sha="$(keytool -exportcert -keystore "$CHIMAHON_PREVIEW_KEYSTORE_PATH" -storepass android -alias androiddebugkey 2>/dev/null | sha256sum | cut -d ' ' -f 1)"
