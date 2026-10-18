@@ -74,6 +74,16 @@ jobs:
           --tests "eu.kanade.tachiyomi.ui.player.controls.NativeSubtitleGeometryTest"
           --no-daemon
 
+      - name: Verify published OCR model catalog
+        run: |
+          python3 - <<'PYTHON'
+          import json, urllib.request
+          manifest = json.load(urllib.request.urlopen('https://github.com/arrow-poppa/chimahon/releases/download/lookitan-ocr-v1/manifest.json'))
+          sources = json.load(open('tools/ocr-models/models.json'))
+          assert manifest['version'] == 'lookitan-ocr-v1'
+          assert set(manifest['components']) == {'paddle_' + name for name in sources} | {'paddle_runtime'}
+          PYTHON
+
       - name: Build ARM64 APK
         run: ./gradlew :app:assemblePreview -PtargetAbis=arm64-v8a --no-daemon
 

@@ -56,7 +56,7 @@ fun restorePaddleArabicText(text: String): String {
     }
     for (codePoint in text.codePoints().toArray()) {
         if (codePoint in 'a'.code..'z'.code || codePoint in 'A'.code..'Z'.code ||
-            codePoint in '0'.code..'9'.code || codePoint.toChar() in " :*./%+-"
+            codePoint in '0'.code..'9'.code || (codePoint <= 127 && codePoint.toChar() in " :*./%+-")
         ) {
             latin.appendCodePoint(codePoint)
         } else {

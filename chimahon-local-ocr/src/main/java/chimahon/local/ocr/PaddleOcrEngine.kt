@@ -125,7 +125,7 @@ class PaddleOcrEngine(
         try {
             if (!librariesLoaded) {
                 val legacy = File(File(appContext.filesDir, MODEL_DIR), "lib/$abi")
-                val libDir = if (File(legacy, "libpaddle_ocr.so").isFile) legacy else File(appContext.filesDir, "paddle_runtime/lib/$abi")
+                val libDir = if (listOf("libpaddle_ocr.so", "libomp.so", "libc++_shared.so").all { File(legacy, it).let { file -> file.isFile && file.length() > 0L } }) legacy else File(appContext.filesDir, "paddle_runtime/lib/$abi")
                 System.load(File(libDir, "libc++_shared.so").absolutePath)
                 System.load(File(libDir, "libomp.so").absolutePath)
                 System.load(File(libDir, "libpaddle_ocr.so").absolutePath)

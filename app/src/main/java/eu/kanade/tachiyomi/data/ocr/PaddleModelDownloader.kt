@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -40,7 +41,7 @@ class PaddleModelDownloader(private val context: Context, private val client: Ok
             bundle == "paddle_runtime" -> {
                 val abi = Build.SUPPORTED_ABIS.firstOrNull { it in setOf("arm64-v8a", "armeabi-v7a") }
                     ?: error("Unsupported device architecture")
-                listOf("lib/$abi/libpaddle_ocr.so", "lib/$abi/libomp.so", "lib/$abi/libc++_shared.so")
+                listOf("lib/$abi/libpaddle_ocr.so", "lib/$abi/libomp.so", "lib/$abi/libc++_shared.so", "MODEL_INFO.json")
             }
             bundle.startsWith("paddle_rec_") -> listOf("model.param", "model.bin", "dict.txt", "MODEL_INFO.json")
             else -> listOf("model.param", "model.bin", "MODEL_INFO.json")
@@ -49,11 +50,17 @@ class PaddleModelDownloader(private val context: Context, private val client: Ok
 
     fun installed(bundle: String): Boolean {
         ModelBundleInstaller.recover(context.filesDir, bundle)
-        return runCatching { required(bundle).all { File(context.filesDir, "$bundle/$it").let { f -> f.isFile && f.length() > 0 } } }.getOrDefault(false)
+        return runCatching {
+            required(bundle).all { File(context.filesDir, "$bundle/$it").let { f -> f.isFile && f.length() > 0 } } &&
+                Json.parseToJsonElement(File(context.filesDir, "$bundle/MODEL_INFO.json").readText()).jsonObject.getValue("version").jsonPrimitive.content == PADDLE_MODELS_VERSION
+        }.getOrDefault(false)
     }
 
-    private fun hasLegacyRuntime(): Boolean = Build.SUPPORTED_ABIS.any { abi ->
-        listOf("libpaddle_ocr.so", "libomp.so", "libc++_shared.so").all { File(context.filesDir, "paddle_ocr/lib/$abi/$it").isFile }
+    private fun hasLegacyRuntime(): Boolean {
+        val abi = Build.SUPPORTED_ABIS.firstOrNull { it in setOf("arm64-v8a", "armeabi-v7a") } ?: return false
+        return listOf("libpaddle_ocr.so", "libomp.so", "libc++_shared.so").all {
+            File(context.filesDir, "paddle_ocr/lib/$abi/$it").let { file -> file.isFile && file.length() > 0L }
+        }
     }
 
     suspend fun ensure(selection: PaddleModelSelection) {
@@ -67,7 +74,7 @@ class PaddleModelDownloader(private val context: Context, private val client: Ok
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                mutableStatus.value = mutableStatus.value + (selection.recognizer.bundle to "Download failed: ${e.message}")
+                mutableStatus.update { it + (selection.recognizer.bundle to "Download failed: ${e.message}") }
             }
         }
     }
@@ -79,7 +86,7 @@ class PaddleModelDownloader(private val context: Context, private val client: Ok
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                mutableStatus.value = mutableStatus.value + (bundle to "Download failed: ${e.message}")
+                mutableStatus.update { it + (bundle to "Download failed: ${e.message}") }
             }
         }
     }
@@ -95,7 +102,7 @@ class PaddleModelDownloader(private val context: Context, private val client: Ok
             check(manifest.getValue("version").jsonPrimitive.content == PADDLE_MODELS_VERSION)
             for (bundle in missing) {
                 require(bundle in paddleComponentBundles)
-                mutableStatus.value = mutableStatus.value + (bundle to "Downloading…")
+                mutableStatus.update { it + (bundle to "Downloading…") }
                 val archive = File.createTempFile("ocr-model-", ".zip", context.cacheDir)
                 try {
                     val info = manifest.getValue("components").jsonObject.getValue(bundle).jsonObject
@@ -129,11 +136,12 @@ class PaddleModelDownloader(private val context: Context, private val client: Ok
                     }
                     check(digest.digest().joinToString("") { "%02x".format(it) } == info.getValue("sha256").jsonPrimitive.content) { "Model archive checksum mismatch" }
                     archive.inputStream().use { ModelBundleInstaller.install(it, context.filesDir, bundle, required(bundle), hashes) }
-                    mutableStatus.value = mutableStatus.value - bundle
+                    mutableStatus.update { it - bundle }
                 } catch (e: CancellationException) {
+                    mutableStatus.update { it - bundle }
                     throw e
                 } catch (e: Exception) {
-                    mutableStatus.value = mutableStatus.value + (bundle to "Download failed: ${e.message}")
+                    mutableStatus.update { it + (bundle to "Download failed: ${e.message}") }
                     throw e
                 } finally {
                     archive.delete()
