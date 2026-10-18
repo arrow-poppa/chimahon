@@ -7,4 +7,4 @@ collect_evidence() {
 }
 trap collect_evidence EXIT
 adb logcat -c
-./gradlew :app:connectedDebugAndroidTest -PtargetAbis=x86_64 -Pandroid.testInstrumentationRunnerArguments.class=eu.kanade.tachiyomi.ui.dictionary.DictionaryNativeSelectionTest --no-daemon
+./gradlew :app:connectedDebugAndroidTest -PtargetAbis=x86_64 -PnativeSelectionTests=true -Pandroid.testInstrumentationRunnerArguments.class=eu.kanade.tachiyomi.ui.dictionary.DictionaryNativeSelectionTest --no-daemon

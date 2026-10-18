@@ -26,6 +26,7 @@ val requestedTargetAbis = providers.gradleProperty("targetAbis").orNull?.let { v
     }
 }
 val targetAbis = requestedTargetAbis ?: supportedAbis
+val nativeSelectionTests = providers.gradleProperty("nativeSelectionTests").orNull == "true"
 
 android {
     namespace = "eu.kanade.tachiyomi"
@@ -43,6 +44,7 @@ android {
         buildConfigField("boolean", "HAS_LOCAL_OCR", hasLocalOcr.toString())
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        if (nativeSelectionTests) ndk.abiFilters += targetAbis
     }
 
     val previewSigning = providers.environmentVariable("CHIMAHON_PREVIEW_KEYSTORE_PATH").orNull?.let { keystorePath ->
@@ -129,7 +131,8 @@ android {
 
     splits {
         abi {
-            isEnable = true
+            // Connected tests need one installable APK rather than ABI split outputs.
+            isEnable = !nativeSelectionTests
             isUniversalApk = requestedTargetAbis == null
             reset()
             include(*targetAbis.toTypedArray())
