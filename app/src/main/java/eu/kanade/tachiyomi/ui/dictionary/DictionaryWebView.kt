@@ -72,6 +72,7 @@ internal fun prepareDictionaryWebViewShell(
                 s.injectFontSize(view)
                 s.injectCustomCss(view)
                 s.flush(view)
+                s.injectAiExplanation(view)
             }
 
             override fun shouldOverrideUrlLoading(
@@ -83,6 +84,13 @@ internal fun prepareDictionaryWebViewShell(
 
                 if (url.scheme == CHIMA_SCHEME) {
                     when (url.host) {
+                        "ai-explanation" -> {
+                            val content = s?.aiExplanation
+                            if (content != null && url.getQueryParameter("key") == content.lookupId) {
+                                url.getQueryParameter("action")?.let(content.onAction)
+                            }
+                            return true
+                        }
                         CHIMA_HOST_LOOKUP -> {
                             val q = url.getQueryParameter("q") ?: return true
                             val sentence = url.getQueryParameter("sentence")
@@ -151,6 +159,18 @@ internal class DictionaryWebViewState(
     var pendingMediaDataUris: Map<String, String>? = null
     var pendingRenderSignature: DictionaryRenderSignature? = null
     var customCss: String = ""
+    var aiExplanation: AiExplanationContent? = null
+    private var lastAiExplanationPayload: String? = null
+
+    fun injectAiExplanation(webView: WebView) {
+        val payload = aiExplanation?.toJson()?.toString() ?: "null"
+        if (payload == lastAiExplanationPayload) return
+        lastAiExplanationPayload = payload
+        webView.evaluateJavascript(
+            "window.DictionaryRenderer && window.DictionaryRenderer.updateAiExplanation(${payload.toJavascriptExpression()});",
+            null,
+        )
+    }
 
     fun injectCustomCss(webView: WebView) {
         if (customCss.isEmpty()) {
@@ -191,6 +211,7 @@ internal class DictionaryWebViewState(
     }
 
     private fun resetState() {
+        lastAiExplanationPayload = null
         lastPayload = null
         lastResults = null
         lastExistingExpressions = null
@@ -202,6 +223,7 @@ internal class DictionaryWebViewState(
     fun reloadShell(webView: WebView, html: String) {
         bootstrapHtml = html
         pageReady = false
+        lastAiExplanationPayload = null
         lastPayload = null
         lastResults = null
         lastExistingExpressions = null

@@ -1157,3 +1157,48 @@ html[data-theme="dark"][data-chima-eink-mode="true"] .anki-open-btn:hover {
 .kanji-info-table-item-value {
   color: var(--fg);
 }
+
+.ai-explanation .ai-explanation-body {
+  padding: 8px 0 0;
+  margin: 0;
+}
+
+.ai-explanation-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.ai-explanation-status {
+  margin-top: 8px;
+  color: var(--secondary);
+  font-size: 0.85em;
+}
+
+.ai-explanation-error {
+  margin-top: 8px;
+  color: var(--error, #b3261e);
+}
+
+.ai-explanation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.ai-explanation-actions button {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ai-explanation-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

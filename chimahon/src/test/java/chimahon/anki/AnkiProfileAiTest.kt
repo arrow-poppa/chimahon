@@ -15,6 +15,7 @@ class AnkiProfileAiTest {
         assertEquals("gpt-4o-mini", profile.aiOpenAiModel)
         assertEquals(0.7f, profile.aiTemperature)
         assertEquals(true, profile.aiAutoGenerate)
+        assertFalse(profile.aiExplanationCollapsed)
         assertFalse(profile.aiStreamResponse)
         assertTrue(profile.aiCancelPendingRequests)
     }
@@ -34,6 +35,7 @@ class AnkiProfileAiTest {
             aiCustomThinkingIntensity = AnkiProfile.THINKING_INTENSITY_CUSTOM,
             aiCustomThinkingIntensityValue = "2000",
             aiCustomRequestBodyJson = "{\"reasoning\":{\"exclude\":false}}",
+            aiExplanationCollapsed = true,
             aiStreamResponse = true,
             aiCancelPendingRequests = false,
         )
@@ -50,6 +52,7 @@ class AnkiProfileAiTest {
         assertEquals(original.aiCustomThinkingIntensity, restored.aiCustomThinkingIntensity)
         assertEquals(original.aiCustomThinkingIntensityValue, restored.aiCustomThinkingIntensityValue)
         assertEquals(original.aiCustomRequestBodyJson, restored.aiCustomRequestBodyJson)
+        assertTrue(restored.aiExplanationCollapsed)
         assertTrue(restored.aiStreamResponse)
         assertFalse(restored.aiCancelPendingRequests)
     }

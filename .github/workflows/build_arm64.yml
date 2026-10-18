@@ -61,10 +61,11 @@ jobs:
       - name: Run focused unit tests
         run: ./gradlew :chimahon:testDebugUnitTest --no-daemon
 
-      - name: Test dictionary ordering and native subtitle lookup
+      - name: Test dictionary ordering, AI content and native subtitles
         run: >-
           ./gradlew :app:testPreviewUnitTest
           --tests "eu.kanade.tachiyomi.ui.dictionary.DictionaryResultOrderingTest"
+          --tests "eu.kanade.tachiyomi.ui.dictionary.AiExplanationContentTest"
           --tests "eu.kanade.tachiyomi.ui.player.controls.NativeSubtitleGeometryTest"
           --no-daemon
 

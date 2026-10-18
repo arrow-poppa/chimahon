@@ -65,6 +65,7 @@ fun DictionaryEntryWebView(
     forceDefaultTheme: Boolean = false,
     requestFocusOnMount: Boolean = false,
     isLoading: Boolean = false,
+    aiExplanation: AiExplanationContent? = null,
 ) {
     val context = LocalContext.current
     val dictionaryPreferences = remember { Injekt.get<DictionaryPreferences>() }
@@ -239,6 +240,7 @@ fun DictionaryEntryWebView(
                 if (state.bootstrapHtml != bootstrapHtml) {
                     state.reloadShell(webView, bootstrapHtml)
                 }
+                state.aiExplanation = aiExplanation
                 state.onAnkiLookup = onAnkiLookup
                 state.ankiJsBridge.onAnkiLookup = onAnkiLookup
 state.onRecursiveLookup = onRecursiveLookup
@@ -271,6 +273,7 @@ state.onRecursiveLookup = onRecursiveLookup
                             state.flush(webView, results, existingExpressions, mediaDataUris, renderSignature, configPayload, builtEntryJsons)
                         }
                     }
+                    state.injectAiExplanation(webView)
                 } else {
                     val (configPayloadVal, configPayloadSig) = currentConfigPayload ?: (null to null)
                     val (builtEntryJsonsVal, entryJsonsSig) = currentEntryJsons ?: (null to null)
@@ -287,6 +290,7 @@ state.onRecursiveLookup = onRecursiveLookup
             onRelease = { webView ->
                 val state = webView.tag as? DictionaryWebViewState
                 state?.clear(webView)
+                state?.aiExplanation = null
                 state?.onContentInvalidated = null
                 state?.onContentReady = null
                 state?.lastPayload = null

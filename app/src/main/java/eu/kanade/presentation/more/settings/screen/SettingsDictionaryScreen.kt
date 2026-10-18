@@ -691,6 +691,17 @@ object SettingsDictionaryScreen : SearchableSettings {
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween,
                             ) {
+                                Text("Collapse AI explanation by default")
+                                Switch(
+                                    checked = activeProfile.aiExplanationCollapsed,
+                                    onCheckedChange = { value -> updateProfile { it.copy(aiExplanationCollapsed = value) } },
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
                                 Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                                     Text("Real Time Response")
                                     Text(

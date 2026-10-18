@@ -68,9 +68,9 @@ import chimahon.ai.withAiFallbackExplanation
 import chimahon.util.ImageEncoder
 import eu.kanade.tachiyomi.ui.dictionary.buildKanjiEntryJson
 import eu.kanade.tachiyomi.ui.dictionary.DictionaryEntryWebView
-import eu.kanade.tachiyomi.ui.dictionary.AiExplanationCard
 import eu.kanade.tachiyomi.ui.dictionary.DictionaryPreferences
 import eu.kanade.tachiyomi.ui.dictionary.getDictionaryColorScheme
+import eu.kanade.tachiyomi.ui.dictionary.rememberAiExplanation
 import eu.kanade.tachiyomi.ui.dictionary.resolveDictionaryTheme
 import eu.kanade.tachiyomi.ui.dictionary.TabInfo
 import eu.kanade.tachiyomi.ui.dictionary.getDictionaryPaths
@@ -114,7 +114,6 @@ private data class LookupFrame(
     val existingCardIds: Map<String, Long> = emptyMap(),
     val entryJsons: List<String>? = null,
     val aiExplanation: String = "",
-    val aiSelectedText: String = "",
 )
 
 private data class RecursivePopupRequest(
@@ -575,7 +574,6 @@ fun OcrLookupPopup(
         val miningFrame = currentFrame
         val effectivePopupSelection = popupSelection
             ?.takeIf { it.isNotBlank() }
-            ?: miningFrame?.aiSelectedText?.takeIf { it.isNotBlank() }
             ?: miningFrame?.aiExplanation?.takeIf { it.isNotBlank() }
         val result = sourceResult.withAiFallbackExplanation(miningFrame?.aiExplanation.orEmpty())
         val miningSentence = miningFrame?.sentence ?: fullText
@@ -1260,11 +1258,12 @@ fun OcrLookupPopup(
                 if (recursiveNavMode == "popup" && dismissOnOutsideTap) {
                     PopupCloseChrome()
                 }
-                currentFrame?.let { frame ->
+                val aiExplanation = currentFrame?.let { frame ->
                     val aiTarget = frame.results.firstOrNull()?.term?.expression
                         ?.takeIf { it.isNotBlank() }
                         ?: frame.query
-                    AiExplanationCard(
+                    rememberAiExplanation(
+                        lookupId = frame.id,
                         profile = activeProfile,
                         target = aiTarget,
                         sentence = frame.sentence,
@@ -1275,14 +1274,6 @@ fun OcrLookupPopup(
                             val frameIndex = stack.indexOfFirst { it.id == frame.id }
                             if (frameIndex >= 0 && stack[frameIndex].aiExplanation != explanation) {
                                 stack[frameIndex] = stack[frameIndex].copy(aiExplanation = explanation)
-                                lookupStackState = lookupStackState.copy(stack = stack)
-                            }
-                        },
-                        onSelectedTextChanged = { selectedText ->
-                            val stack = lookupStackState.stack.toMutableList()
-                            val frameIndex = stack.indexOfFirst { it.id == frame.id }
-                            if (frameIndex >= 0 && stack[frameIndex].aiSelectedText != selectedText) {
-                                stack[frameIndex] = stack[frameIndex].copy(aiSelectedText = selectedText)
                                 lookupStackState = lookupStackState.copy(stack = stack)
                             }
                         },
@@ -1330,6 +1321,7 @@ fun OcrLookupPopup(
                     onBack = onBack,
                     hideOnContentInvalidated = true,
                     isLoading = isLoading,
+                        aiExplanation = if (isLoading) null else aiExplanation,
                     onContentReadyChange = { ready ->
                         if (ready) {
                             contentReady = true

@@ -18,6 +18,8 @@
   let _listenersInstalled = false;
   let _lastAnkiDupAction = -1; // -1 = unknown/not set
   let _dictionaryMediaObserver = null;
+  let _aiExplanation = null;
+  let _aiExplanationCollapsed = false;
   const _prewarmedFontFaces = typeof WeakSet === 'function' ? new WeakSet() : null;
   const HAS_NATIVE_SCOPE = (() => {
     try {
@@ -1076,7 +1078,7 @@
       if (window.getSelection().toString().trim().length > 0) return;
 
       // Skip interactive controls — buttons, dict tags, inflection toggles, etc.
-      if (target.closest('button, .anki-add-btn, .lookup-tab, .entry-deinflection-row, .tag, .dictionary-header, details, summary, a, .gloss-link, .gloss-sc-a')) return;
+      if (target.closest('.ai-explanation, button, .anki-add-btn, .lookup-tab, .entry-deinflection-row, .tag, .dictionary-header, details, summary, a, .gloss-link, .gloss-sc-a')) return;
 
       const word = extractTextAtPoint(e.clientX, e.clientY);
       if (!word) return;
@@ -2818,6 +2820,115 @@
     document.documentElement.style.setProperty('--lookup-tabs-height', '0px');
   }
 
+  function renderAiExplanation() {
+    const container = document.getElementById('entries');
+    if (!container) return;
+    let panel = document.getElementById('ai-explanation');
+    if (!_aiExplanation) {
+      if (panel) panel.remove();
+      return;
+    }
+
+    if (!panel) {
+      panel = document.createElement('article');
+      panel.id = 'ai-explanation';
+      panel.className = 'entry ai-explanation dictionary-group';
+      panel.setAttribute('aria-label', 'AI explanation');
+
+      const header = document.createElement('div');
+      header.className = 'dictionary-header';
+      header.setAttribute('role', 'button');
+      header.setAttribute('tabindex', '0');
+      header.setAttribute('aria-controls', 'ai-explanation-body');
+      const arrow = document.createElement('span');
+      arrow.className = 'dict-arrow';
+      arrow.innerHTML = ICONS.expand_more;
+      header.appendChild(arrow);
+      const title = document.createElement('span');
+      title.className = 'dict-name-label';
+      title.textContent = 'AI explanation';
+      header.appendChild(title);
+      const toggle = (event) => {
+        event.stopPropagation();
+        _aiExplanationCollapsed = !_aiExplanationCollapsed;
+        renderAiExplanation();
+      };
+      header.onclick = toggle;
+      header.onkeydown = (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          toggle(event);
+        }
+      };
+      panel.appendChild(header);
+
+      const body = document.createElement('div');
+      body.id = 'ai-explanation-body';
+      body.className = 'definition-list ai-explanation-body';
+      const text = document.createElement('div');
+      text.className = 'ai-explanation-text';
+      body.appendChild(text);
+      const status = document.createElement('div');
+      status.className = 'ai-explanation-status';
+      status.setAttribute('role', 'status');
+      body.appendChild(status);
+      const error = document.createElement('div');
+      error.className = 'ai-explanation-error';
+      error.setAttribute('role', 'alert');
+      body.appendChild(error);
+      const actions = document.createElement('div');
+      actions.className = 'ai-explanation-actions';
+      for (const action of ['copy', 'generate']) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.dataset.aiAction = action;
+        button.onclick = (event) => {
+          event.stopPropagation();
+          if (!_aiExplanation || button.disabled) return;
+          navigateTo(CHIMA_SCHEME + '//ai-explanation?action=' + action + '&key=' + encodeURIComponent(_aiExplanation.key));
+        };
+        actions.appendChild(button);
+      }
+      body.appendChild(actions);
+      panel.appendChild(body);
+      container.insertBefore(panel, container.firstChild);
+    }
+
+    panel.dataset.collapsed = String(_aiExplanationCollapsed);
+    panel.querySelector('.dictionary-header').setAttribute('aria-expanded', String(!_aiExplanationCollapsed));
+    const text = panel.querySelector('.ai-explanation-text');
+    const nextText = _aiExplanation.text || '';
+    if (text.textContent !== nextText) {
+      const selection = window.getSelection();
+      if (selection && text.contains(selection.anchorNode)) resetPopupSelection();
+      // Treat provider output as plain text, including streamed chunks.
+      text.textContent = nextText;
+    }
+    const status = panel.querySelector('.ai-explanation-status');
+    status.textContent = _aiExplanation.loading
+      ? (nextText ? 'Receiving real time response…' : 'Generating contextual explanation…')
+      : '';
+    status.hidden = !status.textContent;
+    const error = panel.querySelector('.ai-explanation-error');
+    error.textContent = _aiExplanation.error || '';
+    error.hidden = !error.textContent;
+    const copy = panel.querySelector('[data-ai-action="copy"]');
+    copy.textContent = 'Copy';
+    copy.hidden = !nextText;
+    const generate = panel.querySelector('[data-ai-action="generate"]');
+    generate.textContent = nextText ? 'Regenerate' : (_aiExplanation.error ? 'Try again' : 'Generate explanation');
+    generate.disabled = !!_aiExplanation.loading;
+  }
+
+  function updateAiExplanation(content) {
+    if (!content || !_aiExplanation || _aiExplanation.key !== content.key) {
+      _aiExplanationCollapsed = !!(content && content.initiallyCollapsed);
+      resetPopupSelection();
+    }
+    _aiExplanation = content;
+    renderAiExplanation();
+  }
+
   function render(payload) {
     try {
       if (!payload || typeof payload !== 'object') {
@@ -2987,6 +3098,7 @@
         }
       }
 
+      renderAiExplanation();
       const elapsed = Math.round(performance.now() - started);
       postContentReady();
       
@@ -3001,6 +3113,8 @@
   }
 
   function clear() {
+    _aiExplanation = null;
+    _aiExplanationCollapsed = false;
     _autoplayGuard = false;
     resetPopupSelection();
     clearRecursiveSelection();
@@ -3021,6 +3135,7 @@
 
   window.DictionaryRenderer = {
     render,
+    updateAiExplanation,
     clear,
     prewarmFonts,
 
