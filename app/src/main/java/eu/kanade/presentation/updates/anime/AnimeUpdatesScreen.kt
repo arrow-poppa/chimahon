@@ -1,6 +1,7 @@
 package eu.kanade.presentation.updates.anime
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.SnackbarHost
@@ -22,6 +23,7 @@ import eu.kanade.tachiyomi.ui.updates.anime.AnimeUpdatesItem
 import eu.kanade.tachiyomi.ui.updates.anime.AnimeUpdatesScreenModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.FastScrollLazyColumn
 import tachiyomi.presentation.core.components.material.PullRefresh
@@ -49,6 +51,11 @@ fun AnimeUpdateScreen(
     onMultiDeleteClicked: (List<AnimeUpdatesItem>) -> Unit,
     onUpdateSelected: (AnimeUpdatesItem, Boolean, Boolean, Boolean) -> Unit,
     onOpenEpisode: (AnimeUpdatesItem, altPlayer: Boolean) -> Unit,
+    usePanoramaCover: Boolean,
+    collapseToggle: (key: String) -> Unit,
+    updateSwipeStartAction: LibraryPreferences.EpisodeSwipeAction,
+    updateSwipeEndAction: LibraryPreferences.EpisodeSwipeAction,
+    onUpdateSwipe: (AnimeUpdatesItem, LibraryPreferences.EpisodeSwipeAction) -> Unit,
 ) {
     BackHandler(enabled = state.selectionMode, onBack = { onSelectAll(false) })
 
@@ -66,6 +73,13 @@ fun AnimeUpdateScreen(
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
     ) { contentPadding ->
+        // KMK -->
+        // Only keep the bottom inset: the parent already offsets the top for its own
+        // top bar, so consuming this Scaffold's top inset again leaves a phantom gap.
+        val listPadding = remember(contentPadding) {
+            PaddingValues(bottom = contentPadding.calculateBottomPadding())
+        }
+        // KMK <--
         when {
             state.isLoading -> LoadingScreen(Modifier.padding(contentPadding))
             state.items.isEmpty() -> EmptyScreen(
@@ -89,20 +103,26 @@ fun AnimeUpdateScreen(
                         }
                     },
                     enabled = !state.selectionMode,
-                    indicatorPadding = contentPadding,
+                    indicatorPadding = listPadding,
                 ) {
                     FastScrollLazyColumn(
-                        contentPadding = contentPadding,
+                        contentPadding = listPadding,
                     ) {
                         animeUpdatesLastUpdatedItem(lastUpdated)
 
                         animeUpdatesUiItems(
                             uiModels = state.getUiModel(),
+                            expandedState = state.expandedState,
+                            collapseToggle = collapseToggle,
+                            usePanoramaCover = usePanoramaCover,
                             selectionMode = state.selectionMode,
                             onUpdateSelected = onUpdateSelected,
                             onClickCover = onClickCover,
                             onClickUpdate = onOpenEpisode,
                             onDownloadEpisode = onDownloadEpisode,
+                            updateSwipeStartAction = updateSwipeStartAction,
+                            updateSwipeEndAction = updateSwipeEndAction,
+                            onUpdateSwipe = onUpdateSwipe,
                         )
                     }
                 }
@@ -162,6 +182,9 @@ private fun AnimeUpdatesBottomBar(
 }
 
 sealed interface AnimeUpdatesUiModel {
-    data class Header(val date: LocalDate) : AnimeUpdatesUiModel
-    data class Item(val item: AnimeUpdatesItem) : AnimeUpdatesUiModel
+    data class Header(val date: LocalDate, val animeCount: Int) : AnimeUpdatesUiModel
+    open class Item(open val item: AnimeUpdatesItem, open val isExpandable: Boolean = false) : AnimeUpdatesUiModel
+
+    /** The first [Item] in a group of episodes from the same anime */
+    data class Leader(override val item: AnimeUpdatesItem, override val isExpandable: Boolean) : Item(item, isExpandable)
 }

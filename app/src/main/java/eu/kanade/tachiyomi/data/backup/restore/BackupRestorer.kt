@@ -167,7 +167,11 @@ class BackupRestorer(
             }
             // SY <--
             if (options.appSettings) {
-                restoreAppPreferences(backup.backupPreferences, backup.backupCategories.takeIf { options.categories })
+                restoreAppPreferences(
+                    backup.backupPreferences,
+                    backup.backupCategories.takeIf { options.categories },
+                    backup.backupAnimeCategories.takeIf { options.categories },
+                )
                 restoreGlobalStats(backup.backupMangaStats, backup.backupAnkiStats)
             }
             if (options.sourceSettings) {
@@ -321,11 +325,13 @@ class BackupRestorer(
     private fun CoroutineScope.restoreAppPreferences(
         preferences: List<BackupPreference>,
         categories: List<BackupCategory>?,
+        animeCategories: List<BackupCategory>?,
     ) = launch {
         ensureActive()
         preferenceRestorer.restoreApp(
             preferences,
             categories,
+            animeCategories,
         )
 
         restoreProgress += 1
@@ -555,7 +561,7 @@ class BackupRestorer(
     private fun writeErrorLog(): File {
         try {
             if (errors.isNotEmpty()) {
-                val file = context.createFileInCacheDir("komikku_restore_error.txt")
+                val file = context.createFileInCacheDir("chimahon_restore_error.txt")
                 val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault())
 
                 file.bufferedWriter().use { out ->

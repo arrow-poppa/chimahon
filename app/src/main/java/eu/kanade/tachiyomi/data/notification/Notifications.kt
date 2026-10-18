@@ -49,7 +49,12 @@ object Notifications {
     const val ID_DOWNLOAD_CHAPTER_PAUSED = -203
     // KMK <--
     const val ID_OCR_PROGRESS = -204
+    const val ID_OCR_STATUS = -207
+    const val CHANNEL_OCR_PROGRESS = "ocr_progress_channel"
+    const val CHANNEL_OCR_STATUS = "ocr_status_channel"
     const val CHANNEL_OCR_MODEL_DOWNLOAD = "ocr_model_download_channel"
+    const val ID_MODEL_UPDATE = -206
+    const val CHANNEL_MODEL_UPDATE = "model_update_channel"
     const val ID_PANEL_PROGRESS = -205
     const val CHANNEL_PANEL_MODEL_DOWNLOAD = "panel_model_download_channel"
     const val CHANNEL_DOWNLOADER_ERROR = "downloader_error_channel"
@@ -227,6 +232,15 @@ object Notifications {
                     setGroup(GROUP_DOWNLOADER)
                     setShowBadge(false)
                 },
+                buildNotificationChannel(CHANNEL_OCR_PROGRESS, IMPORTANCE_LOW) {
+                    setName(context.stringResource(MR.strings.ocr_processing))
+                    setGroup(GROUP_DOWNLOADER)
+                    setShowBadge(false)
+                },
+                buildNotificationChannel(CHANNEL_OCR_STATUS, IMPORTANCE_DEFAULT) {
+                    setName(context.stringResource(MR.strings.ocr_notification_status_channel))
+                    setGroup(GROUP_DOWNLOADER)
+                },
                 buildNotificationChannel(CHANNEL_BACKUP_RESTORE_PROGRESS, IMPORTANCE_LOW) {
                     setName(context.stringResource(MR.strings.channel_progress))
                     setGroup(GROUP_BACKUP_RESTORE)
@@ -297,6 +311,9 @@ object Notifications {
                 buildNotificationChannel(CHANNEL_DICTIONARY_UPDATE, IMPORTANCE_LOW) {
                     setName(context.stringResource(MR.strings.channel_dictionary_update))
                     setShowBadge(false)
+                },
+                buildNotificationChannel(CHANNEL_MODEL_UPDATE, IMPORTANCE_DEFAULT) {
+                    setName(context.stringResource(MR.strings.model_update_notification_channel))
                 },
                 buildNotificationChannel(CHANNEL_OCR_MODEL_DOWNLOAD, IMPORTANCE_LOW) {
                     setName("OCR model download")

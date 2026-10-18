@@ -41,6 +41,7 @@ import eu.kanade.tachiyomi.data.ocr.ModelDownloader
 import eu.kanade.tachiyomi.data.panel.PanelModelDownloader
 import eu.kanade.tachiyomi.data.ocr.OcrManager
 import eu.kanade.tachiyomi.data.ocr.OcrStore
+import eu.kanade.tachiyomi.data.model.ModelVersionResolver
 import eu.kanade.tachiyomi.data.saver.ImageSaver
 import eu.kanade.tachiyomi.data.sync.service.GoogleDriveService
 import eu.kanade.tachiyomi.data.track.TrackerManager
@@ -332,6 +333,8 @@ class AppModule(val app: Application) : InjektModule {
         addSingletonFactory { chimahon.novel.interactor.SetNovelCategories() }
         addSingletonFactory { chimahon.novel.interactor.ToggleNovelSourcePin() }
         addSingletonFactory { chimahon.novel.interactor.FetchNovelInterval() }
+        addSingletonFactory { chimahon.novel.interactor.GetLibraryNovels() }
+        addSingletonFactory { chimahon.novel.interactor.GetReadNovelNotInLibraryView() }
         addSingletonFactory { eu.kanade.tachiyomi.data.backup.create.creators.NovelExtensionRepoBackupCreator() }
         addSingletonFactory { eu.kanade.tachiyomi.data.backup.restore.restorers.NovelExtensionRepoRestorer() }
         addSingletonFactory<WordAudioPreferences> { get<DictionaryPreferences>() }
@@ -340,11 +343,12 @@ class AppModule(val app: Application) : InjektModule {
         addSingletonFactory { LensClient() }
         addSingletonFactory { LocalOcrBridge(app) }
         addSingletonFactory { PaddleOcrBridge(app) }
-        addSingletonFactory { ModelDownloader(app, get<NetworkHelper>().client) }
+        addSingletonFactory { ModelVersionResolver(get<NetworkHelper>().client) }
+        addSingletonFactory { ModelDownloader(app, get<NetworkHelper>().client, get(), get()) }
         addSingletonFactory { OcrStore(app) }
         addSingletonFactory { OcrCacheManager(app, get()) }
         addSingletonFactory { OcrManager(app, get(), get()) }
-        addSingletonFactory { PanelModelDownloader(app, get<NetworkHelper>().client) }
+        addSingletonFactory { PanelModelDownloader(app, get<NetworkHelper>().client, get()) }
 
         addSingletonFactory<BackupRestoreStatus> { BackupRestoreStatus() }
         addSingletonFactory<SyncStatus> { SyncStatus() }
@@ -368,5 +372,10 @@ class AppModule(val app: Application) : InjektModule {
         }
 
         addSingletonFactory { GoogleDriveService(app) }
+
+        addSingletonFactory { chimahon.novel.sync.ttu.TtuOAuthManager(app) }
+        addSingletonFactory { chimahon.novel.sync.ttu.SyncSettingsRepository(app) }
+        addSingletonFactory { chimahon.novel.sync.ttu.TtuFolderNames(app) }
+        addSingletonFactory { chimahon.novel.sync.ttu.TtuSyncManager(app, get(), get()) }
     }
 }

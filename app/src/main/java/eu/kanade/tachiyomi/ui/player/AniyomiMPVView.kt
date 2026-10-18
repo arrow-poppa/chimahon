@@ -31,7 +31,9 @@ import eu.kanade.tachiyomi.ui.player.settings.AdvancedPlayerPreferences
 import eu.kanade.tachiyomi.ui.player.settings.AudioPreferences
 import eu.kanade.tachiyomi.ui.player.settings.DecoderPreferences
 import eu.kanade.tachiyomi.ui.player.settings.PlayerPreferences
+import eu.kanade.tachiyomi.ui.player.settings.SubtitleAssOverride
 import eu.kanade.tachiyomi.ui.player.settings.SubtitlePreferences
+import eu.kanade.tachiyomi.ui.player.utils.NativeSubtitleTextFilter
 import `is`.xyz.mpv.BaseMPVView
 import `is`.xyz.mpv.KeyMapping
 import `is`.xyz.mpv.MPVLib
@@ -52,11 +54,15 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet) : BaseMPVView(c
     var isExiting = false
     var surfaceReady = false
         private set
-    private val playbackLoadGate = SurfacePlaybackLoadGate { url ->
+    private val playbackLoadGate = SurfacePlaybackLoadGate { url, options ->
         if (isExiting) {
             false
         } else {
-            MPVLib.command(arrayOf("loadfile", url, "replace"))
+            if (options.isEmpty()) {
+                MPVLib.command(arrayOf("loadfile", url, "replace"))
+            } else {
+                MPVLib.command(arrayOf("loadfile", url, "replace", "0", options))
+            }
             true
         }
     }
@@ -73,11 +79,11 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet) : BaseMPVView(c
         super.surfaceDestroyed(holder)
     }
 
-    fun loadFileWhenSurfaceReady(url: String) {
+    fun loadFileWhenSurfaceReady(url: String, options: String = "") {
         if (Looper.myLooper() == Looper.getMainLooper()) {
-            playbackLoadGate.load(url)
+            playbackLoadGate.load(url, options)
         } else {
-            post { playbackLoadGate.load(url) }
+            post { playbackLoadGate.load(url, options) }
         }
     }
 
@@ -112,6 +118,9 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet) : BaseMPVView(c
     var timePos: Int?
         get() = getPropertyInt("time-pos")
         set(position) = MPVLib.setPropertyInt("time-pos", position!!)
+
+    val timePosSeconds: Double?
+        get() = getPropertyDouble("time-pos")
 
     var paused: Boolean?
         get() = getPropertyBoolean("pause")
@@ -260,8 +269,6 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet) : BaseMPVView(c
 
         "sid" to MPVLib.mpvFormat.MPV_FORMAT_STRING,
         "secondary-sid" to MPVLib.mpvFormat.MPV_FORMAT_STRING,
-        "sub-text" to MPVLib.mpvFormat.MPV_FORMAT_STRING,
-        "secondary-sub-text" to MPVLib.mpvFormat.MPV_FORMAT_STRING,
         "aid" to MPVLib.mpvFormat.MPV_FORMAT_STRING,
 
         "speed" to MPVLib.mpvFormat.MPV_FORMAT_DOUBLE,
@@ -301,6 +308,7 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet) : BaseMPVView(c
     }
 
     private fun setupSubtitlesOptions() {
+        MPVLib.setSubtitleTextFilter(NativeSubtitleTextFilter(subtitlePreferences))
         MPVLib.setOptionString("sub-delay", (subtitlePreferences.subtitlesDelay().get() / 1000.0).toString())
         MPVLib.setOptionString("sub-speed", subtitlePreferences.subtitlesSpeed().get().toString())
         MPVLib.setOptionString(
@@ -309,28 +317,30 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet) : BaseMPVView(c
         )
 
         MPVLib.setOptionString("sub-font", subtitlePreferences.subtitleFont().get())
-        // Force-apply mpv's subtitle styling options to ASS so the sub-* options take effect.
-        // Without this, libass renders ASS with the script's own colors/effects, which would
-        // double-render alongside the Compose overlay. Text is drawn by Compose below.
-        MPVLib.setOptionString("sub-ass-override", "force")
-        MPVLib.setOptionString("sub-ass-justify", "yes")
+        MPVLib.setOptionString("sub-ass-override", subtitlePreferences.overrideSubsASS().get().value)
+        if (subtitlePreferences.overrideSubsASS().get() != SubtitleAssOverride.No) {
+            MPVLib.setOptionString("sub-ass-justify", "yes")
+        }
         MPVLib.setOptionString("sub-font-size", subtitlePreferences.subtitleFontSize().get().toString())
         MPVLib.setOptionString("sub-bold", if (subtitlePreferences.boldSubtitles().get()) "yes" else "no")
         MPVLib.setOptionString("sub-italic", if (subtitlePreferences.italicSubtitles().get()) "yes" else "no")
         MPVLib.setOptionString("sub-justify", subtitlePreferences.subtitleJustification().get().value)
-        // Subtitle text is rendered by the Compose player overlay so lookup/highlight can use
-        // exact TextLayoutResult glyph bounds. Keep MPV's subtitle track active for timing and
-        // sub-text updates, but make MPV's own draw layer transparent.
-        MPVLib.setOptionString("sub-color", "#00FFFFFF")
+        MPVLib.setOptionString("sub-color", subtitlePreferences.textColorSubtitles().get().toColorHexString())
         MPVLib.setOptionString(
             "sub-back-color",
-            "#00000000",
+            subtitlePreferences.backgroundColorSubtitles().get().toColorHexString(),
         )
-        MPVLib.setOptionString("sub-border-color", "#00000000")
+        MPVLib.setOptionString("sub-border-color", subtitlePreferences.borderColorSubtitles().get().toColorHexString())
         MPVLib.setOptionString("sub-border-size", subtitlePreferences.subtitleBorderSize().get().toString())
         MPVLib.setOptionString("sub-border-style", subtitlePreferences.borderStyleSubtitles().get().value)
         MPVLib.setOptionString("sub-shadow-offset", subtitlePreferences.shadowOffsetSubtitles().get().toString())
-        MPVLib.setOptionString("sub-pos", subtitlePreferences.subtitlePos().get().toString())
+        MPVLib.setOptionString(
+            "sub-pos",
+            subtitlePreferences.subtitlePos().get().coerceIn(
+                SubtitlePreferences.POSITION_MIN,
+                SubtitlePreferences.POSITION_MAX,
+            ).toString(),
+        )
         MPVLib.setOptionString("sub-scale", subtitlePreferences.subtitleFontScale().get().toString())
     }
 }

@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.ui.library.novels
 
 import android.net.Uri
+import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -34,9 +35,9 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.Upload
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Sync
+import androidx.compose.material.icons.outlined.Upload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
@@ -48,7 +49,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -64,7 +64,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
@@ -76,6 +75,11 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import chimahon.novel.data.BookMetadata
+import chimahon.novel.sync.ttu.SyncDirection
+import chimahon.novel.sync.ttu.SyncMode
+import chimahon.novel.sync.ttu.SyncResult
+import chimahon.novel.sync.ttu.TtuBookRef
+import chimahon.novel.sync.ttu.TtuSyncManager
 import eu.kanade.presentation.components.TabbedDialog
 import eu.kanade.presentation.components.TabbedDialogPaddings
 import eu.kanade.presentation.library.components.CommonMangaItemDefaults
@@ -96,6 +100,8 @@ import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -145,6 +151,69 @@ fun Screen.NovelLibraryScreen(
 
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
+    val ttuSyncManager = remember {
+        runCatching { Injekt.get<TtuSyncManager>() }.getOrNull()
+    }
+    val syncStatus = remember {
+        runCatching { Injekt.get<eu.kanade.tachiyomi.data.SyncStatus>() }.getOrNull()
+    }
+    var ttuSyncJob by remember { mutableStateOf<Job?>(null) }
+
+    suspend fun runTtuSync(
+        refs: List<TtuBookRef>,
+        direction: SyncDirection,
+    ): String {
+        val sync = ttuSyncManager ?: return "TTU sync is not available"
+        var imported = 0
+        var exported = 0
+        var synced = 0
+        var skipped = 0
+        var failed = 0
+        syncStatus?.start()
+        syncStatus?.updateProgress(0f)
+        try {
+            sync.syncBooks(refs, direction) { current, total, result ->
+                when (result) {
+                    is SyncResult.Imported -> imported++
+                    is SyncResult.Exported -> exported++
+                    is SyncResult.Synced -> synced++
+                    is SyncResult.Skipped -> skipped++
+                    is SyncResult.Failed -> {
+                        failed++
+                        Log.w("TtuSyncUi", "TTU sync failed for '${result.title}': ${result.error}")
+                    }
+                }
+                syncStatus?.updateProgress(current.toFloat() / total.toFloat())
+            }
+        } finally {
+            syncStatus?.stop()
+        }
+        return "TTU sync: $imported imported, $exported exported, $synced synced, $skipped skipped, $failed failed"
+    }
+
+    fun syncAllTtuBooks() {
+        if (ttuSyncJob?.isActive == true) {
+            context.toast(SYMR.strings.sync_in_progress)
+            return
+        }
+        val sync = ttuSyncManager
+        if (sync == null) {
+            context.toast("TTU sync is not available")
+            return
+        }
+        if (!sync.isEnabled) {
+            context.toast("TTU sync is disabled or Drive is not connected")
+            return
+        }
+        ttuSyncJob = coroutineScope.launch(Dispatchers.IO) {
+            val refs = runCatching { sync.listBooks() }.getOrNull().orEmpty()
+            val summary = runTtuSync(refs, SyncDirection.AUTO)
+            withContext(Dispatchers.Main) {
+                context.toast(summary)
+            }
+        }
+    }
 
     LaunchedEffect(Unit) {
         requestSortEvent?.receiveAsFlow()?.collectLatest {
@@ -215,12 +284,12 @@ fun Screen.NovelLibraryScreen(
                     if (randomBook != null) {
                         // Extraction may copy + unzip: off the main thread, then
                         // launch like a normal tap.
-                        val randomScope = kotlinx.coroutines.MainScope()
-                        randomScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                        val randomScope = MainScope()
+                        randomScope.launch(Dispatchers.IO) {
                             val bookDir = chimahon.novel.source.LocalNovelFiles
                                 .ensureReadableDir(context, randomBook.id)
                                 ?: chimahon.novel.data.BookStorage.getBookDirectory(context, randomBook.id)
-                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            kotlinx.coroutines.withContext(Dispatchers.Main) {
                                 if (chimahon.novel.data.BookStorage.hasImportedBookContent(bookDir)) {
                                     chimahon.novel.ui.reader.NovelReaderActivity.launch(context, bookDir)
                                 } else {
@@ -232,6 +301,7 @@ fun Screen.NovelLibraryScreen(
                 },
                 onClickSyncExh = null,
                 isSyncEnabled = false,
+                onClickSyncTtu = { syncAllTtuBooks() },
                 searchQuery = state.searchQuery,
                 onSearchQueryChange = screenModel::search,
                 scrollBehavior = scrollBehavior,
@@ -239,11 +309,13 @@ fun Screen.NovelLibraryScreen(
                 onClickEditCategories = { navigator.push(CategoryScreen(CategoryScreen.Tab.NOVELS)) },
                 editCategoriesTitle = stringResource(MR.strings.action_edit_novel_categories),
                 updateCategoryTitle = stringResource(SYMR.strings.label_sync),
-                onClickNovelDefaultCategory = screenModel::showNovelDefaultCategoryDialog,
-                novelDefaultCategoryTitle = stringResource(MR.strings.default_category) + ": " + screenModel.getDefaultCategoryDisplayName(),
             )
         },
         bottomBar = {
+            val singleSelection = if (state.selection.size == 1) state.selection.first() else null
+            val singleBook = singleSelection?.let { id -> state.books.firstOrNull { it.id == id } }
+            val ttuAvailable = ttuSyncManager?.isEnabled == true && singleBook?.title != null
+            val isManualSync = ttuSyncManager?.loadSettings()?.mode == SyncMode.Manual
             NovelLibraryBottomActionMenu(
                 visible = state.selectionMode,
                 onEditClicked = screenModel::showEditDialog,
@@ -251,6 +323,60 @@ fun Screen.NovelLibraryScreen(
                 onChangeCategoryClicked = screenModel::showChangeCategoryDialog,
                 onDeleteClicked = screenModel::showDeleteConfirmDialog,
                 onResetClicked = screenModel::resetStatsForSelected,
+                isManualSync = isManualSync,
+                onSyncAuto = if (ttuAvailable && singleBook != null && singleBook.title != null) {
+                    {
+                        val ref = TtuBookRef(singleBook.id, singleBook.title)
+                        ttuSyncJob = coroutineScope.launch(Dispatchers.IO) {
+                            val summary = runTtuSync(
+                                listOf(ref),
+                                SyncDirection.AUTO,
+                            )
+                            withContext(Dispatchers.Main) {
+                                context.toast(summary)
+                                screenModel.clearSelection()
+                                screenModel.loadLibrary()
+                            }
+                        }
+                    }
+                } else {
+                    null
+                },
+                onSyncImport = if (ttuAvailable && singleBook != null && singleBook.title != null) {
+                    {
+                        val ref = TtuBookRef(singleBook.id, singleBook.title)
+                        ttuSyncJob = coroutineScope.launch(Dispatchers.IO) {
+                            val summary = runTtuSync(
+                                listOf(ref),
+                                SyncDirection.IMPORT,
+                            )
+                            withContext(Dispatchers.Main) {
+                                context.toast(summary)
+                                screenModel.clearSelection()
+                                screenModel.loadLibrary()
+                            }
+                        }
+                    }
+                } else {
+                    null
+                },
+                onSyncExport = if (ttuAvailable && singleBook != null && singleBook.title != null) {
+                    {
+                        val ref = TtuBookRef(singleBook.id, singleBook.title)
+                        ttuSyncJob = coroutineScope.launch(Dispatchers.IO) {
+                            val summary = runTtuSync(
+                                listOf(ref),
+                                SyncDirection.EXPORT,
+                            )
+                            withContext(Dispatchers.Main) {
+                                context.toast(summary)
+                                screenModel.clearSelection()
+                            }
+                        }
+                    }
+                } else {
+                    null
+                },
             )
         },
         floatingActionButton = {
@@ -297,25 +423,25 @@ fun Screen.NovelLibraryScreen(
                 onClickBook = { item ->
                     when (item) {
                         is NovelLibraryItem.LocalBook -> {
-                            // Main behavior: local books open the reader directly,
-                            // no detail screen. Extract first: epub-only books
-                            // (MISSING badge) become readable here; truly empty
-                            // folders get the guard toast.
-                            val tapScope = kotlinx.coroutines.MainScope()
-                            tapScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                            // Local books open the reader directly. Extract
+                            // first; anything without content prompts
+                            // re-import (the row survives file deletes).
+                            val tapScope = MainScope()
+                            tapScope.launch(Dispatchers.IO) {
                                 val bookDir = chimahon.novel.source.LocalNovelFiles
                                     .ensureReadableDir(context, item.metadata.id)
                                     ?: chimahon.novel.data.BookStorage
                                         .getBookDirectory(context, item.metadata.id)
                                 val novelId = screenModel.getLocalNovelId(item.metadata.id)
-                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                kotlinx.coroutines.withContext(Dispatchers.Main) {
                                     // Content gate, not isDirectory: raw-EPUB-only
                                     // folders exist but don't parse.
                                     if (chimahon.novel.data.BookStorage.hasImportedBookContent(bookDir)) {
                                         chimahon.novel.ui.reader.NovelReaderActivity
                                             .launch(context, bookDir, novelId)
                                     } else {
-                                        context.toast("No imported content — re-import the EPUB")
+                                        context.toast("Select the EPUB to restore this book's files")
+                                        epubPicker.launch("application/epub+zip")
                                     }
                                 }
                             }
@@ -363,7 +489,7 @@ fun Screen.NovelLibraryScreen(
                 onEditCategories = { navigator.push(CategoryScreen(CategoryScreen.Tab.NOVELS)) },
                 onConfirm = { include, exclude ->
                     screenModel.clearSelection()
-                    screenModel.setBooksCategories(dialog.books, include, exclude)
+                    screenModel.setNovelsCategories(dialog.novelIds, include, exclude)
                 },
             )
         }
@@ -647,57 +773,6 @@ fun Screen.NovelLibraryScreen(
             }
         }
 
-        is NovelLibraryScreenModel.Dialog.SetDefaultCategory -> {
-            val currentDefault = remember { screenModel.getNovelDefaultCategory().get() }
-            AlertDialog(
-                onDismissRequest = onDismissRequest,
-                title = { Text(stringResource(MR.strings.default_category)) },
-                text = {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { screenModel.setNovelDefaultCategory("") }
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            RadioButton(
-                                selected = currentDefault.isEmpty(),
-                                onClick = { screenModel.setNovelDefaultCategory("") },
-                            )
-                            Text(
-                                text = stringResource(MR.strings.default_category_summary),
-                                modifier = Modifier.padding(start = 12.dp),
-                            )
-                        }
-                        state.categories.forEach { cat ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { screenModel.setNovelDefaultCategory(cat.id) }
-                                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                RadioButton(
-                                    selected = currentDefault == cat.id,
-                                    onClick = { screenModel.setNovelDefaultCategory(cat.id) },
-                                )
-                                Text(
-                                    text = if (cat.isSystemCategory) stringResource(MR.strings.label_default) else cat.name,
-                                    modifier = Modifier.padding(start = 12.dp),
-                                )
-                            }
-                        }
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = onDismissRequest) {
-                        Text(stringResource(MR.strings.action_close))
-                    }
-                },
-            )
-        }
-
         null -> {}
     }
 }
@@ -864,7 +939,7 @@ private fun NovelLibraryList(
                 sourceId = -1L,
                 isMangaFavorite = true,
                 ogUrl = book.coverUrl,
-                lastModified = 0L,
+                lastModified = book.coverLastModified,
             )
             val onLongClick: () -> Unit = { screenModel.toggleSelection(book.id) }
             val onClick: () -> Unit = {
@@ -944,7 +1019,7 @@ private fun NovelLibraryGrid(
                 sourceId = -1L,
                 isMangaFavorite = true,
                 ogUrl = book.coverUrl,
-                lastModified = 0L,
+                lastModified = book.coverLastModified,
             )
             val onLongClick: () -> Unit = { screenModel.toggleSelection(book.id) }
             val onClick: () -> Unit = {
@@ -1085,6 +1160,10 @@ fun NovelLibraryBottomActionMenu(
     onChangeCategoryClicked: () -> Unit,
     onDeleteClicked: () -> Unit,
     onResetClicked: () -> Unit,
+    isManualSync: Boolean = false,
+    onSyncAuto: (() -> Unit)? = null,
+    onSyncImport: (() -> Unit)? = null,
+    onSyncExport: (() -> Unit)? = null,
 ) {
     AnimatedVisibility(
         visible = visible,
@@ -1141,6 +1220,56 @@ fun NovelLibraryBottomActionMenu(
                         toConfirm = confirm[2],
                         onLongClick = { onLongClickItem(2) },
                         onClick = onEditClicked,
+                    )
+                }
+                if (isManualSync && onSyncImport != null && onSyncExport != null) {
+                    var syncExpanded by remember { mutableStateOf(false) }
+                    BottomMenuButton(
+                        title = stringResource(SYMR.strings.label_sync),
+                        icon = Icons.Outlined.Sync,
+                        toConfirm = false,
+                        onLongClick = {},
+                        onClick = { syncExpanded = true },
+                    ) {
+                        DropdownMenu(
+                            expanded = syncExpanded,
+                            onDismissRequest = { syncExpanded = false },
+                        ) {
+                            if (onSyncAuto != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Auto") },
+                                    onClick = {
+                                        syncExpanded = false
+                                        onSyncAuto()
+                                    },
+                                    leadingIcon = { Icon(Icons.Outlined.Sync, null) },
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text("Import from Drive") },
+                                onClick = {
+                                    syncExpanded = false
+                                    onSyncImport()
+                                },
+                                leadingIcon = { Icon(Icons.Outlined.Download, null) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Export to Drive") },
+                                onClick = {
+                                    syncExpanded = false
+                                    onSyncExport()
+                                },
+                                leadingIcon = { Icon(Icons.Outlined.Upload, null) },
+                            )
+                        }
+                    }
+                } else if (onSyncAuto != null) {
+                    BottomMenuButton(
+                        title = stringResource(SYMR.strings.label_sync),
+                        icon = Icons.Outlined.Sync,
+                        toConfirm = false,
+                        onLongClick = {},
+                        onClick = onSyncAuto,
                     )
                 }
                 BottomMenuButton(

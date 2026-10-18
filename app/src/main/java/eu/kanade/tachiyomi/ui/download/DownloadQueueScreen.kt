@@ -70,10 +70,12 @@ import eu.kanade.presentation.theme.colorscheme.AndroidViewColorScheme
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.data.ocr.OcrQueueItem
 import eu.kanade.tachiyomi.data.ocr.OcrQueueStatus
+import eu.kanade.tachiyomi.data.ocr.isActionable
 import eu.kanade.tachiyomi.databinding.DownloadListBinding
 import kotlinx.collections.immutable.persistentListOf
 import tachiyomi.core.common.util.lang.launchUI
 import tachiyomi.i18n.MR
+import tachiyomi.i18n.ank.AMR
 import tachiyomi.presentation.core.components.Pill
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.i18n.stringResource
@@ -97,6 +99,7 @@ object DownloadQueueScreen : Screen() {
         }
         val downloadList by screenModel.state.collectAsState()
         val ocrQueue by screenModel.ocrQueueState.collectAsState()
+        val isOcrPaused by screenModel.isOcrPaused.collectAsState()
         val downloadCount = downloadList.sumOf { item ->
             when (item) {
                 is DownloadHeaderItem -> item.subItems.size
@@ -105,6 +108,7 @@ object DownloadQueueScreen : Screen() {
             }
         }
         val hasMangaDownloads = downloadList.any { it is DownloadHeaderItem }
+        val hasAnimeDownloads = downloadList.any { it is AnimeDownloadHeaderItem }
 
         val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
         var fabExpanded by remember { mutableStateOf(true) }
@@ -211,10 +215,66 @@ object DownloadQueueScreen : Screen() {
                                         )
                                     },
                                 )
+                                // AY -->
+                                // The two queues live in separate header types, so the anime queue
+                                // needs its own sort entries or the menu does nothing for it.
+                                if (hasAnimeDownloads) {
+                                    NestedMenuItem(
+                                        text = { Text(text = stringResource(MR.strings.action_order_by_upload_date)) },
+                                        children = { closeMenu ->
+                                            DropdownMenuItem(
+                                                text = { Text(text = stringResource(MR.strings.action_newest)) },
+                                                onClick = {
+                                                    screenModel.reorderAnimeQueue(
+                                                        { it.download.episode.dateUpload },
+                                                        true,
+                                                    )
+                                                    closeMenu()
+                                                },
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text(text = stringResource(MR.strings.action_oldest)) },
+                                                onClick = {
+                                                    screenModel.reorderAnimeQueue(
+                                                        { it.download.episode.dateUpload },
+                                                        false,
+                                                    )
+                                                    closeMenu()
+                                                },
+                                            )
+                                        },
+                                    )
+                                    NestedMenuItem(
+                                        text = { Text(text = stringResource(AMR.strings.action_order_by_episode_number)) },
+                                        children = { closeMenu ->
+                                            DropdownMenuItem(
+                                                text = { Text(text = stringResource(MR.strings.action_asc)) },
+                                                onClick = {
+                                                    screenModel.reorderAnimeQueue(
+                                                        { it.download.episode.episodeNumber },
+                                                        false,
+                                                    )
+                                                    closeMenu()
+                                                },
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text(text = stringResource(MR.strings.action_desc)) },
+                                                onClick = {
+                                                    screenModel.reorderAnimeQueue(
+                                                        { it.download.episode.episodeNumber },
+                                                        true,
+                                                    )
+                                                    closeMenu()
+                                                },
+                                            )
+                                        },
+                                    )
+                                }
+                                // <-- AY
                             }
 
                             val actions = buildList<AppBar.AppBarAction> {
-                                if (hasMangaDownloads) {
+                                if (hasMangaDownloads || hasAnimeDownloads) {
                                     add(
                                         AppBar.Action(
                                             title = stringResource(MR.strings.action_sort),
@@ -297,18 +357,25 @@ object DownloadQueueScreen : Screen() {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .nestedScroll(nestedScrollConnection)
+                    .nestedScroll(nestedScrollConnection),
             ) {
                 if (ocrQueue.isNotEmpty()) {
                     val maxOcrHeight = LocalConfiguration.current.screenHeightDp.dp / 2
                     OcrQueueSection(
                         ocrQueue = ocrQueue,
+                        isPaused = isOcrPaused,
+                        onPauseResumeClick = { if (isOcrPaused) screenModel.resumeOcr() else screenModel.pauseOcr() },
+                        onCancelAllClick = screenModel::cancelAllOcr,
+                        onRetryFailedClick = screenModel::retryFailedOcr,
                         onCancelClick = { screenModel.cancelOcr(it) },
                         onRetryClick = { screenModel.retryOcr(it) },
                         modifier = Modifier
                             .then(
-                                if (downloadList.isEmpty()) Modifier.weight(1f)
-                                else Modifier.heightIn(max = maxOcrHeight)
+                                if (downloadList.isEmpty()) {
+                                    Modifier.weight(1f)
+                                } else {
+                                    Modifier.heightIn(max = maxOcrHeight)
+                                },
                             )
                             .padding(
                                 start = with(density) { left.toDp() },
@@ -348,8 +415,11 @@ object DownloadQueueScreen : Screen() {
                     modifier = Modifier
                         .fillMaxWidth()
                         .then(
-                            if (downloadList.isNotEmpty()) Modifier.weight(1f).clipToBounds()
-                            else Modifier.height(0.dp)
+                            if (downloadList.isNotEmpty()) {
+                                Modifier.weight(1f).clipToBounds()
+                            } else {
+                                Modifier.height(0.dp)
+                            },
                         ),
                     factory = { context ->
                         screenModel.controllerBinding = DownloadListBinding.inflate(LayoutInflater.from(context))
@@ -404,6 +474,10 @@ object DownloadQueueScreen : Screen() {
 @Composable
 private fun OcrQueueSection(
     ocrQueue: List<OcrQueueItem>,
+    isPaused: Boolean,
+    onPauseResumeClick: () -> Unit,
+    onCancelAllClick: () -> Unit,
+    onRetryFailedClick: () -> Unit,
     onCancelClick: (Long) -> Unit,
     onRetryClick: (Long) -> Unit,
     modifier: Modifier = Modifier,
@@ -416,7 +490,8 @@ private fun OcrQueueSection(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = stringResource(MR.strings.ocr_processing),
+                text = stringResource(if (isPaused) MR.strings.ocr_paused else MR.strings.ocr_processing),
+                modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.primary,
             )
@@ -426,6 +501,24 @@ private fun OcrQueueSection(
                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
                 fontSize = 12.sp,
             )
+            if (ocrQueue.any { it.status.isActionable() }) {
+                IconButton(onClick = onPauseResumeClick) {
+                    Icon(
+                        imageVector = if (isPaused) Icons.Filled.PlayArrow else Icons.Outlined.Pause,
+                        contentDescription = stringResource(
+                            if (isPaused) MR.strings.action_resume else MR.strings.action_pause,
+                        ),
+                    )
+                }
+            }
+            if (ocrQueue.any { it.status == OcrQueueStatus.ERROR }) {
+                IconButton(onClick = onRetryFailedClick) {
+                    Icon(Icons.Outlined.Refresh, contentDescription = stringResource(MR.strings.ocr_retry_failed))
+                }
+            }
+            IconButton(onClick = onCancelAllClick) {
+                Icon(Icons.Outlined.Close, contentDescription = stringResource(MR.strings.action_cancel_all))
+            }
         }
 
         Column(
@@ -453,7 +546,7 @@ private fun OcrQueueItemRow(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             imageVector = Icons.Outlined.DragHandle,

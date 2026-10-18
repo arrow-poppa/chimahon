@@ -34,6 +34,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -59,6 +60,7 @@ import eu.kanade.tachiyomi.ui.category.CategoryScreen
 import eu.kanade.tachiyomi.ui.entries.anime.AnimeScreen
 import eu.kanade.tachiyomi.ui.webview.WebViewScreen
 import mihon.feature.animemigration.dialog.MigrateAnimeDialog
+import eu.kanade.tachiyomi.ui.browse.animemigration.season.MigrateSeasonSelectScreen
 import mihon.presentation.core.util.collectAsLazyPagingItems
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.domain.entries.anime.interactor.GetAnime
@@ -82,6 +84,7 @@ data class BrowseAnimeSourceScreen(
     val sourceId: Long,
     private val listingQuery: String?,
     private val migrateFromAnimeId: Long? = null,
+    private val savedSearchId: Long? = null,
 ) : Screen(), AssistContentScreen {
 
     private var assistUrl: String? = null
@@ -95,7 +98,7 @@ data class BrowseAnimeSourceScreen(
             return
         }
 
-        val screenModel = rememberScreenModel { BrowseAnimeSourceScreenModel(sourceId, listingQuery) }
+        val screenModel = rememberScreenModel { BrowseAnimeSourceScreenModel(sourceId, listingQuery, savedSearchId) }
         val state by screenModel.state.collectAsState()
         val migrationMode = migrateFromAnimeId != null
         val migrateFromAnime by produceState<Anime?>(initialValue = null, migrateFromAnimeId) {
@@ -163,6 +166,7 @@ data class BrowseAnimeSourceScreen(
         }
 
         var topBarHeight by remember { mutableIntStateOf(0) }
+        val animeList = screenModel.animePagerFlowFlow.collectAsLazyPagingItems()
         Scaffold(
             topBar = { scrollBehavior ->
                 if (migrationMode) {
@@ -178,6 +182,7 @@ data class BrowseAnimeSourceScreen(
                     Column(
                         modifier = Modifier
                             .background(MaterialTheme.colorScheme.surface)
+                            .pointerInput(Unit) {}
                             .onSizeChanged { topBarHeight = it.height },
                     ) {
                         BrowseAnimeSourceToolbar(
@@ -270,7 +275,7 @@ data class BrowseAnimeSourceScreen(
         ) { paddingValues ->
             BrowseAnimeSourceContent(
                 source = screenModel.source,
-                animeList = screenModel.animePagerFlowFlow.collectAsLazyPagingItems(),
+                animeList = animeList,
                 columns = screenModel.getColumnsPreference(LocalConfiguration.current.orientation),
                 entries = screenModel.getColumnsPreferenceForCurrentOrientation(LocalConfiguration.current.orientation),
                 topBarHeight = topBarHeight,
@@ -361,6 +366,9 @@ data class BrowseAnimeSourceScreen(
                     current = dialog.oldAnime,
                     target = dialog.newAnime,
                     onClickTitle = { navigator.push(AnimeScreen(dialog.newAnime.id, true)) },
+                    onClickSeasons = {
+                        navigator.push(MigrateSeasonSelectScreen(dialog.oldAnime, dialog.newAnime))
+                    },
                     onDismissRequest = onDismissRequest,
                     onComplete = {
                         onDismissRequest()

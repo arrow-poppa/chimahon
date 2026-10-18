@@ -1,3 +1,4 @@
+import com.android.build.api.variant.FilterConfiguration
 import mihon.buildlogic.Config
 import mihon.buildlogic.getBuildTime
 import mihon.buildlogic.getCommitCount
@@ -49,6 +50,8 @@ android {
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-${getCommitCount()}"
             isPseudoLocalesEnabled = true
+            // Keep debug BuildConfig stable between builds of the same commit.
+            buildConfigField("String", "BUILD_TIME", "\"${getBuildTime(useLastCommitTime = true)}\"")
             buildConfigField("boolean", "UPDATER_ENABLED", "false")
         }
         val release by getting {
@@ -169,12 +172,6 @@ android {
                 "**/libLiteRtClGlAccelerator.so",
                 "**/liblitert_jni.so",
             )
-            // quickjs-kt (io.github.dokar3:quickjs-kt) and core:common's
-            // quickjs-android (com.github.zhanghai:quickjs-java) both bundle
-            // libquickjs.so at the same JNI path. The two wrappers are different
-            // Java APIs over the same QuickJS engine, so the first native wins.
-            // pickFirsts keeps the build green without dropping either dependency.
-            pickFirsts += listOf("**/libquickjs.so")
         }
     }
 
@@ -197,6 +194,15 @@ android {
         abortOnError = false
         checkReleaseBuilds = false
     }
+}
+
+// Packing the app's many class files costs more than recompiling a local debug edit.
+// Keep incremental compilation; enable output caching in CI or with -PcacheDebugKotlin=true.
+val cacheDebugKotlin = providers.gradleProperty("cacheDebugKotlin")
+    .map { it.toBoolean() }
+    .getOrElse(providers.environmentVariable("CI").isPresent)
+tasks.matching { it.name == "compileDebugKotlin" }.configureEach {
+    outputs.doNotCacheIf("Avoid expensive local debug Kotlin output caching") { !cacheDebugKotlin }
 }
 
 kotlin {
@@ -286,7 +292,11 @@ dependencies {
     implementation(androidx.bundles.lifecycle)
     implementation(libs.datastore.preferences)
 
-    // JS engine for LNReader plugins (Hayai reference)
+    // JS engine for LNReader plugins (Hayai reference), used directly by
+    // chimahon.novel.plugin.runtime. Also backs the app.cash.quickjs API that manga
+    // extensions link against, via the shim in core:common. This is the app's only
+    // QuickJS native library; do not add com.github.zhanghai.quickjs-java, whose
+    // libquickjs.so would collide with this one and break every extension JS call.
     implementation(libs.quickjs.kt)
 
     // Job scheduling
@@ -326,6 +336,9 @@ dependencies {
 
     // Image cropper
     implementation(libs.android.image.cropper)
+
+    // EXIF orientation for camera captures (already shipped via :core:common)
+    implementation(sylibs.exifinterface)
 
     // UI libraries
     implementation(libs.material)
@@ -403,6 +416,15 @@ dependencies {
 }
 
 androidComponents {
+    onVariants(selector().withBuildType("debug")) { variant ->
+        variant.outputs.forEach { output ->
+            output.enabled.set(
+                output.filters.any {
+                    it.filterType == FilterConfiguration.FilterType.ABI && it.identifier == "arm64-v8a"
+                },
+            )
+        }
+    }
     onVariants(selector().withFlavor("default" to "standard")) {
         // Only excluding in standard flavor because this breaks
         // Layout Inspector's Compose tree

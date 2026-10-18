@@ -17,7 +17,12 @@
 
 package eu.kanade.presentation.player.components
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -31,6 +36,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.unit.dp
 import kotlinx.collections.immutable.ImmutableList
 
 @Composable
@@ -64,15 +72,34 @@ fun ExposedTextDropDownMenu(
                 .fillMaxWidth(),
         )
 
+        // Cap the menu height so long option lists (e.g. system fonts) stay usable
+        val sizeOfOneItem by remember { mutableStateOf(50.dp) }
+        val screenHeight = with(LocalDensity.current) {
+            LocalWindowInfo.current.containerSize.height.toDp()
+        }
+        val height by remember(options.size, screenHeight) {
+            val itemsSize = sizeOfOneItem * options.size
+            mutableStateOf(minOf(itemsSize, screenHeight * 3 / 4))
+        }
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            options.forEach { option: String ->
-                DropdownMenuItem(
-                    text = { Text(text = option) },
-                    onClick = {
-                        expanded = false
-                        onValueChangedEvent(option)
-                    },
-                )
+            // Column instead of LazyColumn: ExposedDropdownMenu measures content
+            // intrinsics on newer Material3 versions, which LazyColumn
+            // (a SubcomposeLayout) does not support and crashes on.
+            Column(
+                modifier = Modifier
+                    .widthIn(max = 500.dp)
+                    .height(height)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                options.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(text = option) },
+                        onClick = {
+                            expanded = false
+                            onValueChangedEvent(option)
+                        },
+                    )
+                }
             }
         }
     }

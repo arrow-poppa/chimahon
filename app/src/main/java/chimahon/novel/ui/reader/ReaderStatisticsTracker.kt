@@ -111,6 +111,26 @@ class ReaderStatisticsTracker(
         return next
     }
 
+    /**
+     * Swaps the persisted-history view (e.g. after a sync import) without
+     * touching the live session measurement.
+     */
+    fun replaceHistory(history: List<Statistics>) {
+        statistics = history.toMutableList()
+        val todayKey = currentDateKey()
+        val historyToday = history.firstOrNull { it.dateKey == todayKey }
+        val mergedToday = if (historyToday != null) {
+            historyToday.updated(state.session.readingTime, state.session.charactersRead, System.currentTimeMillis())
+        } else {
+            state.today
+        }
+        val base = history.filter { it.dateKey != todayKey }
+        state = state.copy(
+            today = mergedToday,
+            allTime = allTimeStatistic(base + mergedToday),
+        )
+    }
+
     private fun rollTodayIfNeeded() {
         val key = currentDateKey()
         if (state.today.dateKey == key) return

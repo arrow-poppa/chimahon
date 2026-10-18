@@ -9,9 +9,11 @@ import androidx.core.net.toUri
 import eu.kanade.tachiyomi.data.backup.restore.BackupRestoreJob
 import eu.kanade.tachiyomi.data.animedownload.AnimeDownloadManager
 import eu.kanade.tachiyomi.data.download.DownloadManager
+import eu.kanade.tachiyomi.data.ocr.OcrManager
 import eu.kanade.tachiyomi.data.library.LibraryUpdateJob
 import eu.kanade.tachiyomi.data.library.anime.AnimeLibraryUpdateJob
 import eu.kanade.tachiyomi.data.sync.SyncDataJob
+import eu.kanade.tachiyomi.data.model.ModelUpdateJob
 import eu.kanade.tachiyomi.data.updater.AppUpdateDownloadJob
 import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.ui.player.PlayerActivity
@@ -22,9 +24,14 @@ import eu.kanade.tachiyomi.util.system.notificationManager
 import eu.kanade.tachiyomi.util.system.toShareIntent
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import logcat.LogPriority
 import tachiyomi.core.common.Constants
 import tachiyomi.core.common.util.lang.launchIO
+import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.chapter.interactor.GetChapter
 import tachiyomi.domain.chapter.interactor.UpdateChapter
 import tachiyomi.domain.chapter.model.Chapter
@@ -61,9 +68,14 @@ class NotificationReceiver : BroadcastReceiver() {
     private val updateEpisode: UpdateEpisode by injectLazy()
     private val downloadManager: DownloadManager by injectLazy()
     private val animeDownloadManager: AnimeDownloadManager by injectLazy()
+    private val ocrManager: OcrManager by injectLazy()
 
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
+            ACTION_PAUSE_OCR -> runOcrAction { ocrManager.pauseQueue() }
+            ACTION_RESUME_OCR -> runOcrAction { ocrManager.resumeQueue() }
+            ACTION_CANCEL_OCR -> runOcrAction { ocrManager.cancelAll() }
+            ACTION_RETRY_OCR -> runOcrAction { ocrManager.retryAllErrors() }
             // Dismiss notification
             ACTION_DISMISS_NOTIFICATION -> dismissNotification(context, intent.getIntExtra(EXTRA_NOTIFICATION_ID, -1))
             // Resume the download service
@@ -101,6 +113,10 @@ class NotificationReceiver : BroadcastReceiver() {
             ACTION_CANCEL_LIBRARY_UPDATE -> cancelLibraryUpdate(context)
             ACTION_CANCEL_ANIME_LIBRARY_UPDATE -> cancelAnimeLibraryUpdate(context)
             // Start downloading app update
+            ACTION_START_MODEL_UPDATE -> {
+                ModelUpdateJob.startUpdate(context)
+                context.cancelNotification(Notifications.ID_MODEL_UPDATE)
+            }
             ACTION_START_APP_UPDATE -> startDownloadAppUpdate(context, intent)
             // Cancel downloading app update
             ACTION_CANCEL_APP_UPDATE_DOWNLOAD -> cancelDownloadAppUpdate(context)
@@ -170,6 +186,19 @@ class NotificationReceiver : BroadcastReceiver() {
                 if (animeId > -1) {
                     downloadEpisodes(urls, animeId)
                 }
+            }
+        }
+    }
+
+    private fun runOcrAction(action: suspend () -> Unit) {
+        val pendingResult = goAsync()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                action()
+            } catch (e: Exception) {
+                logcat(LogPriority.ERROR, e) { "Failed to handle OCR notification action" }
+            } finally {
+                pendingResult.finish()
             }
         }
     }
@@ -364,6 +393,7 @@ class NotificationReceiver : BroadcastReceiver() {
         private const val ACTION_CANCEL_LIBRARY_UPDATE = "$ID.$NAME.CANCEL_LIBRARY_UPDATE"
         private const val ACTION_CANCEL_ANIME_LIBRARY_UPDATE = "$ID.$NAME.CANCEL_ANIME_LIBRARY_UPDATE"
 
+        private const val ACTION_START_MODEL_UPDATE = "$ID.$NAME.START_MODEL_UPDATE"
         private const val ACTION_START_APP_UPDATE = "$ID.$NAME.ACTION_START_APP_UPDATE"
         private const val ACTION_CANCEL_APP_UPDATE_DOWNLOAD = "$ID.$NAME.CANCEL_APP_UPDATE_DOWNLOAD"
 
@@ -377,6 +407,10 @@ class NotificationReceiver : BroadcastReceiver() {
         private const val ACTION_RESUME_DOWNLOADS = "$ID.$NAME.ACTION_RESUME_DOWNLOADS"
         private const val ACTION_PAUSE_DOWNLOADS = "$ID.$NAME.ACTION_PAUSE_DOWNLOADS"
         private const val ACTION_CLEAR_DOWNLOADS = "$ID.$NAME.ACTION_CLEAR_DOWNLOADS"
+        private const val ACTION_PAUSE_OCR = "$ID.$NAME.ACTION_PAUSE_OCR"
+        private const val ACTION_RESUME_OCR = "$ID.$NAME.ACTION_RESUME_OCR"
+        private const val ACTION_CANCEL_OCR = "$ID.$NAME.ACTION_CANCEL_OCR"
+        private const val ACTION_RETRY_OCR = "$ID.$NAME.ACTION_RETRY_OCR"
 
         private const val ACTION_DISMISS_NOTIFICATION = "$ID.$NAME.ACTION_DISMISS_NOTIFICATION"
 
@@ -400,6 +434,24 @@ class NotificationReceiver : BroadcastReceiver() {
          * @param context context of application
          * @return [PendingIntent]
          */
+        internal fun pauseOcrPendingBroadcast(context: Context) = ocrPendingBroadcast(context, ACTION_PAUSE_OCR)
+
+        internal fun resumeOcrPendingBroadcast(context: Context) = ocrPendingBroadcast(context, ACTION_RESUME_OCR)
+
+        internal fun cancelOcrPendingBroadcast(context: Context) = ocrPendingBroadcast(context, ACTION_CANCEL_OCR)
+
+        internal fun retryOcrPendingBroadcast(context: Context) = ocrPendingBroadcast(context, ACTION_RETRY_OCR)
+
+        private fun ocrPendingBroadcast(context: Context, action: String): PendingIntent {
+            val intent = Intent(context, NotificationReceiver::class.java).setAction(action)
+            return PendingIntent.getBroadcast(
+                context,
+                0,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        }
+
         internal fun resumeDownloadsPendingBroadcast(context: Context): PendingIntent {
             val intent = Intent(context, NotificationReceiver::class.java).apply {
                 action = ACTION_RESUME_DOWNLOADS
@@ -791,6 +843,13 @@ class NotificationReceiver : BroadcastReceiver() {
          * @param context context of application
          * @return [PendingIntent]
          */
+        internal fun updateModelsPendingBroadcast(context: Context): PendingIntent = PendingIntent.getBroadcast(
+            context,
+            Notifications.ID_MODEL_UPDATE,
+            Intent(context, NotificationReceiver::class.java).setAction(ACTION_START_MODEL_UPDATE),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
         internal fun downloadAppUpdatePendingBroadcast(
             context: Context,
             url: String,

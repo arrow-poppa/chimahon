@@ -1,11 +1,15 @@
 package eu.kanade.tachiyomi.animesource.online
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import eu.kanade.tachiyomi.animesource.AnimeCatalogueSource
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.Hoster
+import eu.kanade.tachiyomi.animesource.model.HttpServer
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
+import eu.kanade.tachiyomi.animesource.model.ThumbnailInfo
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.NetworkHelper
@@ -147,6 +151,43 @@ abstract class AnimeHttpSource : AnimeCatalogueSource {
     protected abstract fun episodeListParse(response: Response): List<SEpisode>
 
     protected open fun episodeVideoParse(response: Response): SEpisode = throw UnsupportedOperationException("Not used")
+
+    /**
+     * Get all the available seasons for an anime.
+     * Normally it's not needed to override this method.
+     *
+     * @since extensions-lib 16
+     * @param anime the anime to look for seasons.
+     * @return the seasons for the anime.
+     */
+    override suspend fun getSeasonList(anime: SAnime): List<SAnime> {
+        return client.newCall(seasonListRequest(anime))
+            .awaitSuccess()
+            .let { response ->
+                seasonListParse(response)
+            }
+    }
+
+    /**
+     * Returns the request for updating the season list. Override only if it's needed to override
+     * the url, send different headers or request method like POST.
+     *
+     * @since extensions-lib 16
+     * @param anime the anime to look for seasons.
+     * @return the request for getting the seasons.
+     */
+    protected open fun seasonListRequest(anime: SAnime): Request {
+        return GET(baseUrl + anime.url, headers)
+    }
+
+    /**
+     * Parses the response from the site and returns a list of seasons.
+     *
+     * @since extensions-lib 16
+     * @param response the response from the site.
+     * @return the list of seasons.
+     */
+    protected open fun seasonListParse(response: Response): List<SAnime> = emptyList()
 
     override suspend fun getHosterList(episode: SEpisode): List<Hoster> {
         return client.newCall(hosterListRequest(episode))
@@ -312,6 +353,39 @@ abstract class AnimeHttpSource : AnimeCatalogueSource {
     }
 
     open fun prepareNewEpisode(episode: SEpisode, anime: SAnime) {}
+
+    /**
+     * Return an instance of HttpServer. The app will handle starting and closing of the server.
+     *
+     * @since extensions-lib 17
+     */
+    open fun createHttpServer(): HttpServer? {
+        return null
+    }
+
+    /**
+     * Return info for thumbnails to be used as a preview when seeking.
+     *
+     * @since extensions-lib 17
+     * @param video the video information.
+     * @return the info for thumbnails. Return null if no thumbnails exist.
+     */
+    open suspend fun getVideoThumbnails(video: Video): ThumbnailInfo? {
+        return null
+    }
+
+    /**
+     * Return bitmap for the image tiles.
+     *
+     * @since extensions-lib 17
+     * @param url the url for the image tiles
+     * @return the image bitmap
+     */
+    open suspend fun getImageTile(url: String): Bitmap? {
+        return client.newCall(GET(url, headers)).execute().body.byteStream().use {
+            BitmapFactory.decodeStream(it)
+        }
+    }
 
     override fun getFilterList() = AnimeFilterList()
 }

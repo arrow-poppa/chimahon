@@ -4,6 +4,99 @@ All notable changes to Chimahon are documented here.
 
 The format follows a Keep a Changelog style and uses Semantic Versioning.
 
+## [v2.4.7]
+
+### Added
+- Local PDF support for manga
+- Bulk OCR in chapter selection
+- OCR queue notifications
+- OPDS for novels
+- Novel browse layouts and default category setting
+- Local subtitle autoloading
+- Private extension installer
+
+### Changed
+- Switched to native MPV for subtitle rendering and dictionary lookup
+- Moved model management to OCR settings with storage usage
+- Chimahon icons and export filenames
+
+### Fixed
+- Anime playback and sentence audio failing on some streams
+- Anime extension updates getting stuck
+- Anime OCR screenshot timing
+- Forvo audio links
+- Novel WebView user agent and language filters
+- Novel categories, selection, statistics, and duplicate entries
+- Final novel chapter not being marked read
+- History double-tap ignoring novels
+- First-dictionary Anki glossaries missing additional senses
+- Jellyfin detection and tracking
+- Deleted anime categories in update filters
+- Subtitle position and sentence audio timing
+
+## [v2.4.6]
+
+### Added
+- Camera OCR dictionary lookup
+- Anime updates screen parity with manga, including filters and sort order
+- External video player playback for anime
+- Parallel anime downloads and external downloader support
+- Anime extension lib 17 support
+- Default anime category in library settings
+- Discord rich presence for anime playback
+- Edit info action on the anime details screen
+
+### Fixed
+- Local EPUB books failing to open when all-files access is granted
+- Novel TTU progress sync overwriting remote progress and misreading timestamps
+- Anime tracking on a season not finding the series track
+- Anime tracker sync not updating local episodes past the last seen one
+- Anime migration, history, and search behaviour
+- Anime library sort direction and unread pinning
+- Tapping a search result in anime migration not applying the match
+- Local anime covers not refreshing when episodes are fetched
+- Subtitle position not being lowered to the bottom of the video
+- Crash when changing the subtitle font in the player
+- some manga extensions crashing when running JavaScript
+- Extra gap at the top of the updates screen
+
+## [v2.4.5]
+
+### Fixed
+- Novel chapters rendering blank from publisher kobo-style script headers
+
+## [v2.4.4]
+
+### Added
+- Floating add button in the manga library for local imports
+- Novel TTU (Google Drive) progress and statistics sync
+- Novel clear database screen
+
+### Fixed
+- Local manga covers not showing (uppercase extensions, missing cover fallback)
+- Novel stats duplication, local book imports, and broken-book repair
+- Novel library sort order not persisting across restarts
+- Anime extension ABI mismatch with extensions-lib v16
+
+## [v2.4.3]
+
+### Added
+- Anime seasons support, tracking, and migration
+- Anime feed and per-source feed with saved searches
+- Mass migration for selected anime
+- Anime recommendations, bulk favorite, and tracker autofill
+- Anime extension lib 16 support with repo names
+- System fonts for player subtitles
+- Player settings parity with mpv args and deband
+
+### Changed
+- Anime extension installs use the built-in downloader
+
+### Fixed
+- Extension installs crashing in the background
+- Subtitle font choice not applying to on-screen subtitles
+- Entries without covers showing wrong cached images
+
 ## [v2.4.1]
 
 ### Changed

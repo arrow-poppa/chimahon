@@ -9,6 +9,7 @@ import eu.kanade.domain.sync.SyncPreferences
 import eu.kanade.presentation.entries.DownloadAction
 import eu.kanade.presentation.library.components.LibraryToolbarTitle
 import eu.kanade.tachiyomi.animesource.model.SAnime
+import exh.util.isLewd
 import eu.kanade.tachiyomi.animesource.AnimeSource
 import eu.kanade.tachiyomi.data.animedownload.AnimeDownloadManager
 import eu.kanade.tachiyomi.data.cache.AnimeBackgroundCache
@@ -104,6 +105,7 @@ class AnimeLibraryScreenModel(
                 preferences.showHiddenCategories().changes(),
                 getTracksPerAnime.subscribe(),
                 getTrackingFiltersFlow(),
+                preferences.filterLewd().changes(),
             ) { values ->
                 @Suppress("UNCHECKED_CAST")
                 val libraryAnime = values[0] as List<LibraryAnime>
@@ -124,6 +126,7 @@ class AnimeLibraryScreenModel(
                 val trackMap = values[13] as Map<Long, List<AnimeTrack>>
                 @Suppress("UNCHECKED_CAST")
                 val trackingFilters = values[14] as Map<Long, TriState>
+                val filterLewd = values[15] as TriState
 
                 val items = libraryAnime.map { anime ->
                     val apiSource = sourceManager.getOrStub(anime.anime.source)
@@ -152,6 +155,7 @@ class AnimeLibraryScreenModel(
                     filterCompleted,
                     filterDownloaded,
                     filterFillermarked,
+                    filterLewd,
                 ).let { applyTrackingFilters(it, trackMap, trackingFilters) }
 
                 val grouped = applyGrouping(filtered, categories, groupType, showHiddenCategories)
@@ -170,7 +174,8 @@ class AnimeLibraryScreenModel(
                     filterBookmarked != TriState.DISABLED ||
                     filterCompleted != TriState.DISABLED ||
                     filterDownloaded != TriState.DISABLED ||
-                    filterFillermarked != TriState.DISABLED
+                    filterFillermarked != TriState.DISABLED ||
+                    filterLewd != TriState.DISABLED
 
                 State(
                     isLoading = false,
@@ -475,6 +480,7 @@ class AnimeLibraryScreenModel(
         filterCompleted: TriState,
         filterDownloaded: TriState,
         filterFillermarked: TriState,
+        filterLewd: TriState,
     ): List<AnimeLibraryItem> {
         var result = items
 
@@ -488,6 +494,7 @@ class AnimeLibraryScreenModel(
         result = applyTriStateFilter(result, filterCompleted) { it.libraryAnime.anime.status == SAnime.COMPLETED.toLong() }
         result = applyTriStateFilter(result, filterFillermarked) { it.libraryAnime.hasFillermarks }
         result = applyTriStateFilter(result, filterDownloaded) { it.downloadCount > 0 || it.isLocal }
+        result = applyTriStateFilter(result, filterLewd) { it.libraryAnime.anime.isLewd() }
 
         return result
     }
@@ -628,13 +635,23 @@ class AnimeLibraryScreenModel(
             LibrarySort.Type.Alphabetical -> Comparator { a, b ->
                 collator.compare(a.libraryAnime.anime.title, b.libraryAnime.anime.title)
             }
-            LibrarySort.Type.LastRead -> compareByDescending { it.libraryAnime.lastSeen }
-            LibrarySort.Type.LastUpdate -> compareByDescending { it.libraryAnime.anime.lastUpdate }
-            LibrarySort.Type.UnreadCount -> compareByDescending { it.libraryAnime.unseenCount }
-            LibrarySort.Type.TotalChapters -> compareByDescending { it.libraryAnime.totalEpisodes }
-            LibrarySort.Type.LatestChapter -> compareByDescending { it.libraryAnime.latestUpload }
-            LibrarySort.Type.ChapterFetchDate -> compareByDescending { it.libraryAnime.episodeFetchedAt }
-            LibrarySort.Type.DateAdded -> compareByDescending { it.libraryAnime.anime.dateAdded }
+            LibrarySort.Type.LastRead -> compareBy { it.libraryAnime.lastSeen }
+            LibrarySort.Type.LastUpdate -> compareBy { it.libraryAnime.anime.lastUpdate }
+            LibrarySort.Type.UnreadCount -> Comparator { a, b ->
+                val aCount = a.libraryAnime.unseenCount
+                val bCount = b.libraryAnime.unseenCount
+                when {
+                    // Ensure unseen content comes first, empty counts always last
+                    aCount == bCount -> 0
+                    aCount == 0L -> if (sort.isAscending) 1 else -1
+                    bCount == 0L -> if (sort.isAscending) -1 else 1
+                    else -> aCount.compareTo(bCount)
+                }
+            }
+            LibrarySort.Type.TotalChapters -> compareBy { it.libraryAnime.totalEpisodes }
+            LibrarySort.Type.LatestChapter -> compareBy { it.libraryAnime.latestUpload }
+            LibrarySort.Type.ChapterFetchDate -> compareBy { it.libraryAnime.episodeFetchedAt }
+            LibrarySort.Type.DateAdded -> compareBy { it.libraryAnime.anime.dateAdded }
             LibrarySort.Type.TrackerMean -> compareBy {
                 trackerScores[it.libraryAnime.id] ?: DEFAULT_TRACKER_SCORE_SORT_VALUE
             }

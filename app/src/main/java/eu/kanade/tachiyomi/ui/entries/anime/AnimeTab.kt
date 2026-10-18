@@ -24,25 +24,25 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.util.fastAll
 import cafe.adriel.voyager.core.model.rememberScreenModel
+import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cafe.adriel.voyager.navigator.tab.TabOptions
 import eu.kanade.presentation.category.components.ChangeCategoryDialog
-import eu.kanade.presentation.entries.components.LibraryBottomActionMenu
-import eu.kanade.presentation.library.DeleteLibraryEntryDialog
 import eu.kanade.presentation.entries.anime.library.AnimeLibraryContent
 import eu.kanade.presentation.entries.anime.library.AnimeLibrarySettingsDialog
+import eu.kanade.presentation.entries.components.LibraryBottomActionMenu
+import eu.kanade.presentation.library.DeleteLibraryEntryDialog
 import eu.kanade.presentation.library.components.LibraryPagerBoundary
 import eu.kanade.presentation.library.components.LibraryToolbar
 import eu.kanade.presentation.library.components.LibraryToolbarTitle
 import eu.kanade.presentation.library.components.libraryModeBoundarySwipe
 import eu.kanade.presentation.more.onboarding.GETTING_STARTED_URL
-import eu.kanade.tachiyomi.ui.library.LibraryModeTitleContent
-import eu.kanade.tachiyomi.ui.library.LibraryViewMode
-import cafe.adriel.voyager.core.screen.Screen
 import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.R
+import eu.kanade.tachiyomi.data.connections.discord.DiscordRPCService
+import eu.kanade.tachiyomi.data.connections.discord.DiscordScreen
 import eu.kanade.tachiyomi.data.library.anime.AnimeLibraryUpdateJob
 import eu.kanade.tachiyomi.data.sync.SyncDataJob
 import eu.kanade.tachiyomi.ui.browse.animesource.globalsearch.GlobalAnimeSearchScreen
@@ -50,20 +50,25 @@ import eu.kanade.tachiyomi.ui.category.CategoryScreen
 import eu.kanade.tachiyomi.ui.entries.anime.library.AnimeLibraryScreenModel
 import eu.kanade.tachiyomi.ui.entries.anime.library.AnimeLibrarySettingsScreenModel
 import eu.kanade.tachiyomi.ui.home.HomeScreen
+import eu.kanade.tachiyomi.ui.library.LibraryModeTitleContent
+import eu.kanade.tachiyomi.ui.library.LibraryViewMode
 import eu.kanade.tachiyomi.ui.main.MainActivity
-import eu.kanade.tachiyomi.ui.player.PlayerActivity
+import eu.kanade.tachiyomi.ui.player.settings.PlayerPreferences
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import mihon.feature.animemigration.config.AnimeMigrationConfigScreen
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.domain.category.model.AnimeCategory
 import tachiyomi.domain.entries.anime.model.Anime
 import tachiyomi.domain.episode.model.Episode
 import tachiyomi.domain.library.model.LibraryAnime
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 import tachiyomi.i18n.MR
 import tachiyomi.i18n.sy.SYMR
 import tachiyomi.presentation.core.components.material.Scaffold
@@ -90,6 +95,7 @@ fun Screen.AnimeLibraryPanel(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
+    val playerPreferences = remember { Injekt.get<PlayerPreferences>() }
 
     val screenModel = rememberScreenModel { AnimeLibraryScreenModel() }
     val settingsScreenModel = rememberScreenModel { AnimeLibrarySettingsScreenModel() }
@@ -111,7 +117,13 @@ fun Screen.AnimeLibraryPanel(
     }
 
     suspend fun openEpisode(episode: Episode) {
-        context.startActivity(PlayerActivity.newIntent(context, episode.animeId, episode.id))
+        // Used to always open the in-app player, ignoring the external player preference.
+        MainActivity.startPlayerActivity(
+            context = context,
+            animeId = episode.animeId,
+            episodeId = episode.id,
+            extPlayer = playerPreferences.alwaysUseExternalPlayer().get(),
+        )
     }
 
     val defaultTitle = stringResource(MR.strings.label_anime)
@@ -196,6 +208,20 @@ fun Screen.AnimeLibraryPanel(
                 onDownloadClicked = screenModel::runDownloadActionSelection
                     .takeIf { state.selection.fastAll { !it.anime.isLocal() } },
                 onDeleteClicked = screenModel::openDeleteAnimeDialog,
+                onMigrateClicked = {
+                    // Local entries have nowhere to migrate to, and the selection bar would
+                    // otherwise stay on screen over the migration flow. Mirrors the manga
+                    // library's Migrate action.
+                    val selection = state.selection
+                        .filterNot { it.anime.isLocal() }
+                        .map { it.anime.id }
+                    screenModel.clearSelection()
+                    if (selection.isEmpty()) {
+                        context.toast(SYMR.strings.no_valid_entry)
+                    } else {
+                        navigator.push(AnimeMigrationConfigScreen(selection))
+                    }
+                },
                 isManga = false,
             )
         },
@@ -251,7 +277,13 @@ fun Screen.AnimeLibraryPanel(
                             GlobalAnimeSearchScreen(screenModel.state.value.searchQuery ?: ""),
                         )
                     },
-                    getNumberOfAnimeForCategory = { state.getAnimeCountForCategory(it) },
+                    getNumberOfAnimeForCategory = {
+                        if (state.showAnimeCount || !state.searchQuery.isNullOrEmpty()) {
+                            state.getAnimeCountForCategory(it)
+                        } else {
+                            null
+                        }
+                    },
                     getDisplayMode = { screenModel.getDisplayMode() },
                     getColumnsForOrientation = {
                         screenModel.getColumnsPreferenceForCurrentOrientation(
@@ -323,6 +355,12 @@ fun Screen.AnimeLibraryPanel(
     LaunchedEffect(state.isLoading) {
         if (!state.isLoading) {
             (context as? MainActivity)?.ready = true
+
+            // KMK -->
+            with(DiscordRPCService) {
+                discordScope.launchIO { setScreen(context, DiscordScreen.LIBRARY) }
+            }
+            // <-- KMK
         }
     }
 

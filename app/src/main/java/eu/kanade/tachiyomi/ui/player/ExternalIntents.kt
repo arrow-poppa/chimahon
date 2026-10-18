@@ -12,34 +12,30 @@ import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.domain.sync.SyncPreferences
-import eu.kanade.domain.track.anime.model.toDbTrack
-import eu.kanade.domain.track.service.DelayedAnimeTrackingUpdateJob
+import eu.kanade.domain.track.interactor.TrackEpisode
 import eu.kanade.domain.track.service.TrackPreferences
-import eu.kanade.domain.track.store.DelayedAnimeTrackingStore
+import eu.kanade.tachiyomi.animesource.AnimeSource
+import eu.kanade.tachiyomi.animesource.model.HttpServer
 import eu.kanade.tachiyomi.animesource.model.Video
+import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
+import eu.kanade.tachiyomi.data.connections.discord.DiscordRPCService
+import eu.kanade.tachiyomi.data.connections.discord.PlayerData
 import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.data.sync.SyncDataJob
-import eu.kanade.tachiyomi.data.track.AnimeTracker
-import eu.kanade.tachiyomi.data.track.TrackerManager
-import eu.kanade.tachiyomi.animesource.AnimeSource
-import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.ui.player.loader.EpisodeLoader
 import eu.kanade.tachiyomi.ui.player.loader.HosterLoader
 import eu.kanade.tachiyomi.ui.player.settings.PlayerPreferences
 import eu.kanade.tachiyomi.util.system.LocaleHelper
-import eu.kanade.tachiyomi.util.system.isOnline
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.DelicateCoroutinesApi
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import logcat.LogPriority
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.core.common.util.lang.withUIContext
 import tachiyomi.core.common.util.system.logcat
+import tachiyomi.domain.download.service.DownloadPreferences
 import tachiyomi.domain.entries.anime.interactor.GetAnime
 import tachiyomi.domain.entries.anime.model.Anime
-import tachiyomi.domain.download.service.DownloadPreferences
 import tachiyomi.domain.episode.interactor.GetEpisodesByAnimeId
 import tachiyomi.domain.episode.interactor.UpdateEpisode
 import tachiyomi.domain.episode.model.Episode
@@ -47,8 +43,6 @@ import tachiyomi.domain.episode.model.EpisodeUpdate
 import tachiyomi.domain.history.interactor.UpsertAnimeHistory
 import tachiyomi.domain.history.model.AnimeHistoryUpdate
 import tachiyomi.domain.source.service.SourceManager
-import tachiyomi.domain.track.anime.interactor.GetAnimeTracks
-import tachiyomi.domain.track.anime.interactor.InsertAnimeTrack
 import tachiyomi.i18n.ank.AMR
 import tachiyomi.source.local.entries.anime.LocalAnimeSource
 import uy.kohesive.injekt.Injekt
@@ -90,9 +84,39 @@ class ExternalIntents {
             ?: HosterLoader.getBestVideo(source, hosters)
             ?: throw Exception("Video list is empty")
 
-        val videoUrl = getVideoUrl(source, context, video) ?: return null
+        // AY -->
+        // extensions-lib 17: the source serves the video itself and hands back placeholder urls,
+        // so point the external player at the local server's real port instead. The server is
+        // held statically so it survives this activity going away while the external player
+        // streams from it; only one is kept and the previous one is stopped.
+        var videoUrl = getVideoUrl(source, context, video) ?: return null
+        if (video.usesHttpServer()) {
+            val httpSource = source as? AnimeHttpSource
+            val port = startExternalHttpServer(httpSource)
+            if (port <= 0) {
+                withUIContext { context.toast(AMR.strings.http_server_start_failure) }
+                return null
+            }
+            videoUrl = getVideoUrl(source, context, video.copyHttpServer(port)) ?: return null
+        }
+        // <-- AY
 
         val pkgName = playerPreferences.externalPlayerPreference().get()
+
+        // KMK -->
+        withIOContext {
+            DiscordRPCService.setPlayerActivity(
+                context = context,
+                playerData = PlayerData(
+                    incognitoMode = basePreferences.incognitoMode().get(),
+                    animeId = anime.id,
+                    animeTitle = anime.ogTitle,
+                    episodeNumber = episode.episodeNumber.toString(),
+                    thumbnailUrl = anime.thumbnailUrl,
+                ),
+            )
+        }
+        // <-- KMK
 
         // No custom package setting found
 
@@ -442,13 +466,13 @@ class ExternalIntents {
     private val getAnime: GetAnime = Injekt.get()
     private val sourceManager: SourceManager = Injekt.get()
     private val getEpisodesByAnimeId: GetEpisodesByAnimeId = Injekt.get()
-    private val getTracks: GetAnimeTracks = Injekt.get()
-    private val insertTrack: InsertAnimeTrack = Injekt.get()
     private val downloadManager: DownloadManager by injectLazy()
-    private val delayedTrackingStore: DelayedAnimeTrackingStore = Injekt.get()
     private val playerPreferences: PlayerPreferences = Injekt.get()
     private val downloadPreferences: DownloadPreferences = Injekt.get()
     private val trackPreferences: TrackPreferences = Injekt.get()
+    // KMK -->
+    private val trackEpisode: TrackEpisode = Injekt.get()
+    // KMK <--
     private val syncPreferences: SyncPreferences = Injekt.get()
     private val basePreferences: BasePreferences by injectLazy()
 
@@ -498,7 +522,7 @@ class ExternalIntents {
                 ),
             )
             if (trackPreferences.autoUpdateTrack().get() && seen) {
-                updateTrackEpisodeSeen(currEp.episodeNumber.toDouble(), anime)
+                updateTrackEpisodeSeen(currEp.episodeNumber.toDouble(), anime, currEp.url)
             }
             if (seen) {
                 deleteEpisodeIfNeeded(currentEpisode, anime)
@@ -554,44 +578,19 @@ class ExternalIntents {
      * @param episodeNumber the episode number to be updated.
      * @param anime the anime of the episode.
      */
-    private suspend fun updateTrackEpisodeSeen(episodeNumber: Double, anime: Anime) {
+    private suspend fun updateTrackEpisodeSeen(episodeNumber: Double, anime: Anime, episodeUrl: String) {
         if (!trackPreferences.autoUpdateTrack().get()) return
 
-        val trackerManager = Injekt.get<TrackerManager>()
         val context = Injekt.get<Application>()
 
+        // KMK -->
+        // Delegate to the shared interactor so external playback refreshes the remote track
+        // before writing and queues a delayed update when the request fails, instead of
+        // silently dropping the update like the previous inline implementation.
         withIOContext {
-            getTracks.await(anime.id)
-                .mapNotNull { track ->
-                    val tracker = trackerManager.get(track.trackerId)
-                    if (tracker != null &&
-                        tracker.isLoggedIn &&
-                        tracker is AnimeTracker &&
-                        episodeNumber > track.lastEpisodeSeen
-                    ) {
-                        val updatedTrack = track.copy(lastEpisodeSeen = episodeNumber)
-
-                        // We want these to execute even if the presenter is destroyed and leaks
-                        // for a while. The view can still be garbage collected.
-                        async {
-                            runCatching {
-                                if (context.isOnline()) {
-                                    tracker.update(updatedTrack.toDbTrack(), true)
-                                    insertTrack.await(updatedTrack)
-                                } else {
-                                    delayedTrackingStore.add(track.id, lastEpisodeSeen = episodeNumber)
-                                    DelayedAnimeTrackingUpdateJob.setupTask(context)
-                                }
-                            }
-                        }
-                    } else {
-                        null
-                    }
-                }
-                .awaitAll()
-                .mapNotNull { it.exceptionOrNull() }
-                .forEach { logcat(LogPriority.INFO, it) }
+            trackEpisode.await(context, anime.id, episodeNumber, episodeUrl = episodeUrl)
         }
+        // KMK <--
     }
 
     /**
@@ -625,6 +624,30 @@ class ExternalIntents {
         suspend fun newIntent(context: Context, animeId: Long, episodeId: Long, video: Video?): Intent? {
             return externalIntents.getExternalIntent(context, animeId, episodeId, video)
         }
+
+        // AY -->
+        /**
+         * Server backing an external player session, kept out of the instance so it outlives the
+         * activity that launched the player. Anikku runs the equivalent in a foreground service so
+         * it also survives process death; without that, streaming stops if the app is killed while
+         * the external player is in the foreground.
+         */
+        private var externalHttpServer: HttpServer? = null
+
+        private fun startExternalHttpServer(source: AnimeHttpSource?): Int {
+            if (source == null) return 0
+            return try {
+                externalHttpServer?.stop()
+                val server = source.createHttpServer() ?: return 0
+                server.start()
+                externalHttpServer = server
+                server.listeningPort
+            } catch (e: Exception) {
+                logcat(LogPriority.ERROR, e) { "Failed to start http server for external player" }
+                0
+            }
+        }
+        // <-- AY
     }
 }
 

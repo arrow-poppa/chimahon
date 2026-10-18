@@ -17,6 +17,7 @@
     <string name="action_open_folder">Open folder</string>
     <string name="action_clear_manga">Clear manga</string>
     <string name="action_clear_ocr_cache">Clear OCR cache</string>
+    <string name="action_scan_from_camera">Scan text with camera</string>
     <string name="confirm_clear_ocr_cache">Are you sure you want to clear the OCR cache? This will delete all cached OCR files for this entry.</string>
     <string name="action_update">Update</string>
         <!-- History section -->
@@ -152,6 +153,10 @@
     <string name="action_skip_duplicate_manga">Skip it</string>
     <string name="action_allow_all_duplicate_manga">Allow all</string>
     <string name="action_skip_all_duplicate_manga">Skip all</string>
+    <string name="action_allow_duplicate_anime">Allow it</string>
+    <string name="action_skip_duplicate_anime">Skip it</string>
+    <string name="action_allow_all_duplicate_anime">Allow all</string>
+    <string name="action_skip_all_duplicate_anime">Skip all</string>
     <string name="downloaded_data">Downloaded data</string>
     <string name="chapters_from_database">Chapters &amp; History from Database</string>
     <!--UpdateCheck-->
@@ -227,6 +232,8 @@
     <string name="discord_status_messing">Messing around with</string>
     <string name="discord_download_button">Read on %s</string>
     <string name="discord_app_description">Komikku - a manga reader app</string>
+    <string name="discord_app_description_anime">Komikku - an anime watching app</string>
+    <string name="video">Video</string>
     <!-- Discord RPC Customization -->
     <string name="pref_category_discord_customization">Discord Customization</string>
     <string name="pref_discord_custom_message">Custom Message</string>
@@ -303,4 +310,11 @@
     <!-- Search history -->
     <string name="pref_search_history">Search history</string>
     <string name="pref_search_history_summary">Remember recent searches across screens</string>
+    <!-- Camera OCR -->
+    <string name="camera_ocr_title">Camera OCR</string>
+    <string name="camera_ocr_capture">Take photo</string>
+    <string name="camera_ocr_retake">Retake</string>
+    <string name="camera_ocr_unavailable">No camera app is available on this device.</string>
+    <string name="camera_ocr_permission_denied">Camera permission was not granted.</string>
+    <string name="camera_ocr_capture_failed">Could not capture the photo.</string>
 </resources>

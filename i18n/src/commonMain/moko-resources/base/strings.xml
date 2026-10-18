@@ -117,6 +117,7 @@
     <string name="action_global_search">Global search</string>
     <string name="action_select_all">Select all</string>
     <string name="action_select_inverse">Select inverse</string>
+    <string name="action_select">Select</string>
     <string name="action_mark_as_read">Mark as read</string>
     <string name="action_mark_as_unread">Mark as unread</string>
     <string name="action_mark_previous_as_read">Mark previous as read</string>
@@ -177,6 +178,7 @@
     <string name="action_display_show_tabs">Show category tabs</string>
     <string name="action_display_show_number_of_items">Show number of items</string>
     <string name="action_display_show_continue_reading_button">Continue reading button</string>
+    <string name="action_display_show_floating_add_button">Show floating add button</string>
     <string name="action_disable">Disable</string>
     <string name="action_pin">Pin</string>
     <string name="action_unpin">Unpin</string>
@@ -436,9 +438,38 @@
     <string name="ocr_ready">OCR ready</string>
     <string name="ocr_not_ready">OCR not ready</string>
     <string name="ocr_running">OCR running…</string>
+    <string name="ocr_paused">OCR paused</string>
+    <string name="ocr_retry_failed">Retry failed</string>
+    <string name="ocr_notification_status_channel">OCR results</string>
+    <string name="ocr_notification_page">Page %1$d of %2$d</string>
+    <string name="ocr_notification_queue">%1$d processing · %2$d queued · %3$d waiting for download · %4$d failed</string>
+    <string name="ocr_notification_result">%1$d completed · %2$d failed · %3$d waiting for download</string>
+    <string name="ocr_notification_complete">OCR complete</string>
+    <string name="ocr_notification_failed">OCR needs attention</string>
     <string name="action_download_and_ocr">Download &amp; OCR</string>
     <string name="action_run_ocr">Run OCR</string>
     <string name="action_delete_ocr">Delete OCR data</string>
+    <string name="model_update_notification_channel">Model updates</string>
+    <string name="model_update_notification_title">Model updates available</string>
+    <string name="model_update_notification_text">Update %1$s over Wi-Fi.</string>
+    <string name="model_update_notification_action">Update</string>
+    <string name="pref_downloaded_models">Downloaded models</string>
+    <string name="model_selection">Models</string>
+    <string name="model_ocr_lens">On-device OCR (Lens)</string>
+    <string name="model_ocr_paddle">Paddle OCR</string>
+    <string name="model_panel_detection">Panel detection</string>
+    <string name="model_ocr_lens_version">On-device OCR (Lens) — v%1$s</string>
+    <string name="model_ocr_paddle_version">Paddle OCR — v%1$s</string>
+    <string name="model_panel_installed">Panel detection — installed</string>
+    <string name="model_delete_selected">Delete selected models</string>
+    <string name="model_delete_selected_summary">%1$d selected</string>
+    <string name="model_deleted">Selected models deleted</string>
+    <string name="model_check_updates">Check for model updates</string>
+    <string name="model_latest_known">Latest known release: v%1$s</string>
+    <string name="model_update_available">Model update available: v%1$s</string>
+    <string name="model_up_to_date">Models are up to date</string>
+    <string name="model_update_selected">Re-download selected models</string>
+    <string name="model_none_installed">Nothing selected is installed</string>
     <string name="action_ocr">OCR</string>
     <string name="action_pre_ocr">Pre-OCR chapters</string>
     <string name="ocr_processing">OCR processing</string>
@@ -548,6 +579,8 @@
     <string name="pref_library_update_refresh_metadata_summary">Check for new cover and details when updating library</string>
 
     <string name="default_category">Default category</string>
+    <string name="default_anime_category">Default anime category</string>
+    <string name="default_novel_category">Default novel category</string>
     <string name="default_category_summary">Always ask</string>
     <string name="categorized_display_settings">Per-category settings for sort</string>
     <string name="pref_library_update_categories_details">Entries in excluded categories will not be updated even if they are also in included categories.</string>
@@ -920,6 +953,9 @@
     <string name="pref_clear_anime_database">Clear anime database</string>
     <string name="pref_clear_anime_database_summary">Delete anime entries that are not saved in your library</string>
     <string name="clear_anime_database_confirmation">You’re about to remove non-library anime entries from the database</string>
+    <string name="pref_clear_novel_database">Clear novel database</string>
+    <string name="pref_clear_novel_database_summary">Delete novel entries that are not saved in your library</string>
+    <string name="clear_novel_database_confirmation">You’re about to remove non-library novel entries from the database</string>
     <string name="clear_database_source_item_count">%1$d non-library entries in database</string>
     <string name="clear_database_text">You’re about to remove entries from the database</string>
     <string name="clear_database_history_warning">Read chapters and progress of non-library entries will be lost</string>
@@ -1069,6 +1105,7 @@
     <string name="show_chapter_number">Chapter number</string>
     <string name="sort_by_source">By source</string>
     <string name="sort_by_number">By chapter number</string>
+    <string name="sort_by_season_number">Season number</string>
     <string name="sort_by_upload_date">By upload date</string>
     <string name="manga_download">Download</string>
     <string name="download_unread">Unread</string>
@@ -1335,6 +1372,7 @@
     <string name="appwidget_updates_description">See your recently updated library entries</string>
     <string name="appwidget_unavailable_locked">Widget not available when app lock is enabled</string>
     <string name="remove_manga">You are about to remove \"%s\" from your library</string>
+    <string name="remove_anime">You are about to remove \"%s\" from your library</string>
 
     <!-- Common exceptions -->
     <!-- Do not translate "WebView" -->
@@ -1383,6 +1421,9 @@
     <string name="migrationListScreen.migrateDialog.cancelLabel">Cancel</string>
     <string name="migrationListScreen.progressDialog.cancelLabel">Cancel</string>
     <string name="migrationListScreen.matchWithoutChapterToast">No chapters found, this entry cannot be used for migration</string>
+    <string name="migrationListScreen.matchWithoutEpisodeToast">No episodes found, this entry cannot be used for migration</string>
+    <string name="migrationListScreen.matchWithoutSeasonToast">No seasons found, this entry cannot be used for migration</string>
+    <string name="migrationListScreen.mismatchedFetchType">Mismatched fetch type</string>
     <string name="pref_dict_pitch_accent_display">Pitch Accent Display</string>
     <string name="pref_dict_pitch_diagram">Graph</string>
     <string name="pref_dict_pitch_number">012</string>
@@ -1645,6 +1686,7 @@
     <!-- Anime specific -->
     <string name="delete_downloads_for_anime">Delete downloaded episodes?</string>
     <string name="no_episodes_error">No episodes found</string>
+    <string name="no_seasons_error">No seasons found</string>
     <string name="episode_settings_updated">Episode settings updated</string>
     <string name="snack_add_to_anime_library">Add to library?</string>
     <string name="confirm_tracker_update_anime">Update trackers to episode %d?</string>
@@ -1677,6 +1719,20 @@
     <string name="player_sheets_filters_Saturation">Saturation</string>
     <string name="player_sheets_filters_title">Video Filters</string>
     <string name="player_sheets_filters_warning">Filters may affect performance</string>
+    <string name="player_sheets_deband_title">Deband</string>
+    <string name="player_sheets_deband_iterations">Iterations</string>
+    <string name="player_sheets_deband_threshold">Threshold</string>
+    <string name="player_sheets_deband_range">Range</string>
+    <string name="player_sheets_deband_grain">Grain</string>
+    <string name="player_sheets_subtitles_ass_no">No</string>
+    <string name="player_sheets_subtitles_ass_yes">Yes</string>
+    <string name="player_sheets_subtitles_ass_scale">Scale</string>
+    <string name="player_sheets_subtitles_ass_force">Force</string>
+    <string name="player_sheets_subtitles_ass_strip">Strip</string>
+    <string name="player_pref_subtitle_black_bars">Render on black bars</string>
+    <string name="player_pref_subtitle_black_bars_summary">Display subtitles on black bars when available</string>
+    <string name="player_pref_subtitle_system_fonts">Include system fonts</string>
+    <string name="player_pref_switch_on_failure">Switch video on loading failure</string>
     <string name="player_sheets_more_title">More</string>
     <string name="player_sheets_stats_page_title">Statistics</string>
     <string name="player_sheets_sub_color_alpha">Alpha</string>
@@ -1700,6 +1756,7 @@
     <string name="player_sheets_sub_scale">Scale</string>
     <string name="player_sheets_sub_typography_border_size">Border size</string>
     <string name="player_sheets_sub_typography_border_style">Border style</string>
+    <string name="player_sheets_sub_typography_ass_override">ASS override</string>
     <string name="player_sheets_sub_typography_font">Font</string>
     <string name="player_sheets_sub_typography_font_size">Font size</string>
     <string name="player_sheets_sub_typography_title">Typography</string>
@@ -1760,6 +1817,7 @@
     <string name="action_play_externally">Play externally</string>
     <string name="action_play_internally">Play internally</string>
     <string name="action_show_anime">Show anime</string>
+    <string name="label_show_seasons">Show seasons</string>
     <string name="also_set_episode_settings_for_library">Also set episode settings for library</string>
     <string name="anime_interval_expected_update">Expected next update in %1$s with current interval of %2$s</string>
     <string name="anime_interval_expected_update_null">Expected next update is unknown</string>

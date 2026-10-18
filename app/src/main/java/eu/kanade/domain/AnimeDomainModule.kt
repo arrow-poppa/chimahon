@@ -3,6 +3,7 @@ package eu.kanade.domain
 import eu.kanade.domain.track.anime.interactor.AddAnimeTracks
 import eu.kanade.domain.track.anime.interactor.RefreshAnimeTracks
 import eu.kanade.domain.entries.anime.interactor.UpdateAnime as AppUpdateAnime
+import eu.kanade.domain.entries.anime.interactor.SyncSeasonsWithSource
 import eu.kanade.domain.episode.interactor.SetSeenStatus as AppSetSeenStatus
 import eu.kanade.domain.track.interactor.SyncEpisodeProgressWithTrack
 import eu.kanade.domain.track.interactor.TrackEpisode
@@ -15,6 +16,8 @@ import tachiyomi.data.entries.anime.AnimeRepositoryImpl
 import tachiyomi.data.entries.anime.AnimeMergeRepositoryImpl
 import tachiyomi.data.category.AnimeCategoryRepositoryImpl
 import tachiyomi.data.episode.EpisodeRepositoryImpl
+import tachiyomi.data.source.anime.AnimeFeedSavedSearchRepositoryImpl
+import tachiyomi.data.source.anime.AnimeSavedSearchRepositoryImpl
 import tachiyomi.domain.entries.anime.interactor.DeleteAnimeById
 import tachiyomi.domain.entries.anime.interactor.DeleteByMergeId
 import tachiyomi.domain.entries.anime.interactor.DeleteMergeById
@@ -47,6 +50,21 @@ import tachiyomi.domain.entries.anime.repository.AnimeRepository
 import tachiyomi.domain.entries.anime.repository.CustomAnimeRepository
 import tachiyomi.domain.source.anime.interactor.GetAnimeSourcesWithNonLibraryAnime
 import tachiyomi.domain.source.anime.service.AnimeSourceManager
+import tachiyomi.domain.source.anime.interactor.CountAnimeFeedSavedSearchBySourceId
+import tachiyomi.domain.source.anime.interactor.CountAnimeFeedSavedSearchGlobal
+import tachiyomi.domain.source.anime.interactor.DeleteAnimeFeedSavedSearchById
+import tachiyomi.domain.source.anime.interactor.DeleteAnimeSavedSearchById
+import tachiyomi.domain.source.anime.interactor.GetAnimeFeedSavedSearchBySourceId
+import tachiyomi.domain.source.anime.interactor.GetAnimeFeedSavedSearchGlobal
+import tachiyomi.domain.source.anime.interactor.GetAnimeSavedSearchById
+import tachiyomi.domain.source.anime.interactor.GetAnimeSavedSearchBySourceId
+import tachiyomi.domain.source.anime.interactor.GetAnimeSavedSearchBySourceIdFeed
+import tachiyomi.domain.source.anime.interactor.GetAnimeSavedSearchGlobalFeed
+import tachiyomi.domain.source.anime.interactor.InsertAnimeFeedSavedSearch
+import tachiyomi.domain.source.anime.interactor.InsertAnimeSavedSearch
+import tachiyomi.domain.source.anime.interactor.ReorderAnimeFeed
+import tachiyomi.domain.source.anime.repository.AnimeFeedSavedSearchRepository
+import tachiyomi.domain.source.anime.repository.AnimeSavedSearchRepository
 import tachiyomi.domain.category.interactor.CreateAnimeCategory
 import tachiyomi.domain.category.interactor.DeleteAnimeCategory
 import tachiyomi.domain.category.interactor.GetAnimeCategories
@@ -64,6 +82,7 @@ import tachiyomi.domain.episode.interactor.GetMergedEpisodesByAnimeId
 import tachiyomi.domain.episode.interactor.SetAnimeDefaultEpisodeFlags
 import tachiyomi.domain.episode.interactor.SetSeenStatus as DomainSetSeenStatus
 import tachiyomi.domain.season.interactor.SetAnimeDefaultSeasonFlags
+import tachiyomi.domain.season.interactor.ShouldUpdateDbSeason
 import tachiyomi.domain.episode.interactor.ShouldUpdateDbEpisode
 import tachiyomi.domain.episode.interactor.UpdateEpisode
 import tachiyomi.domain.episode.repository.EpisodeRepository
@@ -131,6 +150,8 @@ class AnimeDomainModule : InjektModule {
         addFactory { DomainSetSeenStatus(get()) }
         addFactory { AppSetSeenStatus(get(), get()) }
         addFactory { ShouldUpdateDbEpisode() }
+        addFactory { ShouldUpdateDbSeason() }
+        addFactory { SyncSeasonsWithSource(get(), get(), get(), get(), get()) }
         addFactory { SyncEpisodesWithSource(get(), get(), get(), get(), get()) }
         addFactory { FilterEpisodesForDownload(get(), get(), get()) }
         addFactory { GetNextEpisodes(get(), get(), get()) }
@@ -147,16 +168,36 @@ class AnimeDomainModule : InjektModule {
 
         addSingletonFactory { AnimeLibraryPreferences(get()) }
 
+        addSingletonFactory<AnimeSavedSearchRepository> { AnimeSavedSearchRepositoryImpl(get()) }
+        addFactory { GetAnimeSavedSearchById(get()) }
+        addFactory { GetAnimeSavedSearchBySourceId(get()) }
+        addFactory { DeleteAnimeSavedSearchById(get()) }
+        addFactory { InsertAnimeSavedSearch(get()) }
+
+        addSingletonFactory<AnimeFeedSavedSearchRepository> { AnimeFeedSavedSearchRepositoryImpl(get()) }
+        addFactory { InsertAnimeFeedSavedSearch(get()) }
+        addFactory { DeleteAnimeFeedSavedSearchById(get()) }
+        addFactory { GetAnimeFeedSavedSearchGlobal(get()) }
+        addFactory { GetAnimeFeedSavedSearchBySourceId(get()) }
+        addFactory { CountAnimeFeedSavedSearchGlobal(get()) }
+        addFactory { CountAnimeFeedSavedSearchBySourceId(get()) }
+        addFactory { GetAnimeSavedSearchGlobalFeed(get()) }
+        addFactory { GetAnimeSavedSearchBySourceIdFeed(get()) }
+        addFactory { ReorderAnimeFeed(get()) }
+
         addFactory { InsertAnimeTrack(get()) }
         addFactory { DeleteAnimeTrack(get()) }
         addFactory { GetAnimeTracks(get()) }
         addFactory { GetTracksPerAnime(get()) }
         addFactory { SyncEpisodeProgressWithTrack(get(), get(), get()) }
         addFactory { AddAnimeTracks(get(), get(), get(), get()) }
-        addFactory { RefreshAnimeTracks(get(), get(), get(), get()) }
-        addFactory { TrackEpisode(get(), get(), get(), get()) }
+        // AY -->
+        addFactory { RefreshAnimeTracks(get(), get(), get(), get(), get()) }
+        addFactory { TrackEpisode(get(), get(), get(), get(), get()) }
+        // <-- AY
         addFactory {
             MigrateAnimeUseCase(
+                get(),
                 get(),
                 get(),
                 get(),

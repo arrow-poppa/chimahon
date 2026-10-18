@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.ui.browse.novelextension
 import android.app.Application
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
+import chimahon.novel.plugin.isNovelLanguageEnabled
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.presentation.components.SEARCH_DEBOUNCE_MILLIS
@@ -114,11 +115,27 @@ class NovelExtensionsScreenModel(
                             (_installedApk + jsInstalled).none { it.pkgName == extension.pkgName } &&
                                 _untrustedApk.none { it.pkgName == extension.pkgName } &&
                                 (showNsfwSources || !extension.isNsfw) &&
-                                (extension.lang == "all" || extension.lang in enabledLanguages || "all" in enabledLanguages || enabledLanguages.isEmpty())
+                                isNovelLanguageEnabled(extension.lang, enabledLanguages)
                         }
                         .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
 
-                    val installedCombined = (_installedApk + jsInstalled)
+                    val opds = Extension.Installed(
+                        name = "OPDS",
+                        pkgName = chimahon.novel.opds.OpdsSource.PACKAGE_NAME,
+                        versionName = "1.0",
+                        versionCode = 1,
+                        libVersion = 1.0,
+                        lang = "all",
+                        isNsfw = false,
+                        signatureHash = "builtin",
+                        storeName = "Chimahon",
+                        pkgFactory = null,
+                        sources = emptyList(),
+                        icon = androidx.appcompat.content.res.AppCompatResources.getDrawable(context, eu.kanade.tachiyomi.R.drawable.ic_opds),
+                        isShared = true,
+                        contentType = Extension.ContentType.NOVEL,
+                    )
+                    val installedCombined = (_installedApk + jsInstalled + opds)
                         .filter { showNsfwSources || !it.isNsfw }
                         .sortedWith(
                             compareBy<Extension.Installed> { !it.isObsolete }
@@ -299,6 +316,7 @@ class NovelExtensionsScreenModel(
             .collect()
 
     fun uninstallExtension(extension: Extension) {
+        if (extension.pkgName == chimahon.novel.opds.OpdsSource.PACKAGE_NAME) return
         if (extension.pkgName.startsWith("js.")) {
             val id = extension.pkgName.removePrefix("js.")
             screenModelScope.launchIO {

@@ -17,7 +17,6 @@
 
 package eu.kanade.tachiyomi.ui.player.controls.components.panels
 
-import android.annotation.SuppressLint
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -39,6 +38,7 @@ import androidx.compose.material.icons.filled.FormatClear
 import androidx.compose.material.icons.filled.FormatColorText
 import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.FormatSize
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -57,7 +57,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
-import com.yubyf.truetypeparser.TTFFile
 import dev.icerock.moko.resources.StringResource
 import eu.kanade.presentation.components.DropdownMenu
 import eu.kanade.presentation.player.components.ExpandableCard
@@ -66,20 +65,20 @@ import eu.kanade.presentation.player.components.SliderItem
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.ui.player.controls.CARDS_MAX_WIDTH
 import eu.kanade.tachiyomi.ui.player.controls.panelCardsColors
+import eu.kanade.tachiyomi.ui.player.settings.SubtitleAssOverride
 import eu.kanade.tachiyomi.ui.player.settings.SubtitleJustification
 import eu.kanade.tachiyomi.ui.player.settings.SubtitlePreferences
+import eu.kanade.tachiyomi.ui.player.utils.SubtitleFontResolver
 import `is`.xyz.mpv.MPVLib
 import kotlinx.collections.immutable.toImmutableList
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import tachiyomi.core.common.preference.deleteAndGet
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
+import tachiyomi.presentation.core.util.collectAsState
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
-@SuppressLint("MutableCollectionMutableState")
 @Composable
 fun SubtitleSettingsTypographyCard(
     modifier: Modifier = Modifier,
@@ -87,7 +86,8 @@ fun SubtitleSettingsTypographyCard(
     val preferences = remember { Injekt.get<SubtitlePreferences>() }
     var isExpanded by remember { mutableStateOf(true) }
 
-    val fonts by remember { mutableStateOf(mutableListOf(preferences.subtitleFont().defaultValue())) }
+    var fonts by remember { mutableStateOf(listOf(preferences.subtitleFont().defaultValue())) }
+    val includeSystemFonts by preferences.subtitleSystemFonts().collectAsState()
     var fontsLoadingIndicator: (@Composable () -> Unit)? by remember {
         val indicator: (@Composable () -> Unit) = {
             CircularProgressIndicator(Modifier.size(32.dp))
@@ -95,20 +95,10 @@ fun SubtitleSettingsTypographyCard(
         mutableStateOf(indicator)
     }
     val context = LocalContext.current
-    LaunchedEffect(Unit) {
-        val fontsDir = chimahon.novel.data.FontManager.getFontsDir(context)
-        withContext(Dispatchers.IO) {
-            val fontFiles = fontsDir.listFiles()
-            if (fontFiles != null) {
-                val matchedFonts = fontFiles.filter { file ->
-                    file.name.lowercase().matches(FONT_EXTENSION_REGEX)
-                }.mapNotNull { file ->
-                    runCatching { TTFFile.open(file.inputStream()).families.values.first() }.getOrNull()
-                }
-                fonts.addAll(matchedFonts.distinct())
-            }
-            fontsLoadingIndicator = null
-        }
+    LaunchedEffect(includeSystemFonts) {
+        val families = SubtitleFontResolver.fontFamilies(context, includeSystemFonts).keys
+        fonts = (listOf(preferences.subtitleFont().defaultValue()) + families).distinct()
+        fontsLoadingIndicator = null
     }
 
     ExpandableCard(
@@ -147,6 +137,11 @@ fun SubtitleSettingsTypographyCard(
             var borderSize by remember {
                 mutableStateOf(
                     MPVLib.getPropertyInt("sub-border-size"),
+                )
+            }
+            var assOverride by remember {
+                mutableStateOf(
+                    SubtitleAssOverride.byValue(MPVLib.getPropertyString("sub-ass-override").orEmpty()),
                 )
             }
             var shadowOffset by remember {
@@ -214,6 +209,8 @@ fun SubtitleSettingsTypographyCard(
                     isItalic = MPVLib.getPropertyBoolean("sub-italic")
                     justify =
                         SubtitleJustification.entries.first { it.value == MPVLib.getPropertyString("sub-justify") }
+                    assOverride =
+                        SubtitleAssOverride.byValue(MPVLib.getPropertyString("sub-ass-override").orEmpty())
                     font = MPVLib.getPropertyString("sub-font")
                     fontSize = MPVLib.getPropertyInt("sub-font-size")
                     borderStyle =
@@ -265,6 +262,58 @@ fun SubtitleSettingsTypographyCard(
                 },
             ) {
                 Icon(Icons.Default.FormatSize, null)
+            }
+
+            var selectingAssOverride by remember { mutableStateOf(false) }
+            Box {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(
+                            onClick = {
+                                selectingAssOverride = !selectingAssOverride
+                            },
+                        )
+                        .padding(
+                            horizontal = MaterialTheme.padding.medium,
+                            vertical = MaterialTheme.padding.small,
+                        ),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.large),
+                ) {
+                    Icon(Icons.Default.Tune, null)
+                    Column {
+                        Text(
+                            text = stringResource(MR.strings.player_sheets_sub_typography_ass_override),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            text = stringResource(assOverride.titleRes),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
+                DropdownMenu(expanded = selectingAssOverride, onDismissRequest = { selectingAssOverride = false }) {
+                    SubtitleAssOverride.entries.map {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(it.titleRes)) },
+                            onClick = {
+                                assOverride = it
+                                preferences.overrideSubsASS().set(it)
+                                MPVLib.setPropertyString("sub-ass-override", it.value)
+                                selectingAssOverride = false
+                            },
+                            trailingIcon = {
+                                if (assOverride == it) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                    )
+                                }
+                            },
+                        )
+                    }
+                }
             }
 
             var selectingBorderStyle by remember { mutableStateOf(false) }
@@ -346,14 +395,13 @@ fun SubtitleSettingsTypographyCard(
     }
 }
 
-private val FONT_EXTENSION_REGEX = Regex(""".*\.[ot]tf${'$'}""")
-
 fun resetTypography(preferences: SubtitlePreferences) {
     MPVLib.setPropertyBoolean("sub-bold", preferences.boldSubtitles().deleteAndGet())
     MPVLib.setPropertyBoolean("sub-italic", preferences.italicSubtitles().deleteAndGet())
     val justify = preferences.subtitleJustification().deleteAndGet()
     MPVLib.setPropertyString("sub-justify", justify.value)
     MPVLib.setPropertyBoolean("sub-ass-justify", justify != SubtitleJustification.Auto)
+    MPVLib.setPropertyString("sub-ass-override", preferences.overrideSubsASS().deleteAndGet().value)
     MPVLib.setPropertyString("sub-font", preferences.subtitleFont().deleteAndGet())
     MPVLib.setPropertyInt("sub-font-size", preferences.subtitleFontSize().deleteAndGet())
     MPVLib.setPropertyInt("sub-border-size", preferences.subtitleBorderSize().deleteAndGet())

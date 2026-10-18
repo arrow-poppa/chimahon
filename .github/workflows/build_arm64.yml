@@ -7,6 +7,7 @@ on:
       - agent/byok-ai-official-streaming
       - agent/byok-ai-v2.4.0
       - agent/byok-ai-v2.4.1
+      - agent/byok-ai-v2.4.7
   workflow_dispatch:
 
 permissions:
@@ -60,8 +61,12 @@ jobs:
       - name: Run focused unit tests
         run: ./gradlew :chimahon:testDebugUnitTest --no-daemon
 
-      - name: Test dictionary result ordering
-        run: ./gradlew :app:testPreviewUnitTest --tests "eu.kanade.tachiyomi.ui.dictionary.DictionaryResultOrderingTest" --no-daemon
+      - name: Test dictionary ordering and native subtitle lookup
+        run: >-
+          ./gradlew :app:testPreviewUnitTest
+          --tests "eu.kanade.tachiyomi.ui.dictionary.DictionaryResultOrderingTest"
+          --tests "eu.kanade.tachiyomi.ui.player.controls.NativeSubtitleGeometryTest"
+          --no-daemon
 
       - name: Build ARM64 APK
         run: ./gradlew :app:assemblePreview -PtargetAbis=arm64-v8a --no-daemon

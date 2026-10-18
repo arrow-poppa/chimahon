@@ -69,6 +69,11 @@ class AnimeLibraryPreferences(
         TriState.DISABLED,
     )
 
+    fun filterLewd() = preferenceStore.getEnum(
+        "pref_filter_animelib_lewd_v2",
+        TriState.DISABLED,
+    )
+
     fun filterTracking(id: Int) = preferenceStore.getEnum(
         "pref_filter_animelib_tracked_${id}_v2",
         TriState.DISABLED,
@@ -91,8 +96,6 @@ class AnimeLibraryPreferences(
     // endregion
 
     // region Category
-
-    fun defaultCategory() = preferenceStore.getInt("default_anime_category", -1)
 
     fun lastUsedCategory() = preferenceStore.getInt(
         Preference.appStateKey("last_used_anime_category"),
