@@ -1361,9 +1361,9 @@ fun OcrLookupPopup(
                 offset = IntOffset(layoutResult.x.roundToInt(), layoutResult.y.roundToInt()),
                 onDismissRequest = { dismissPopup() },
                 properties = PopupProperties(
-                    // Native text selection needs focus; outside taps must still reach the reader.
+                    // Selection needs focus. Keep non-dismissing popups non-modal for reader taps.
                     flags = android.view.WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
-                        android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+                        (if (dismissOnOutsideTap) 0 else android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL),
                     dismissOnClickOutside = dismissOnOutsideTap,
                 ),
             ) {
