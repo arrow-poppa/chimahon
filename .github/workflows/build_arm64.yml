@@ -66,6 +66,13 @@ jobs:
             exit 1
           fi
 
+      - name: Test persistent signing before compiling
+        run: |
+          python3 tools/android/test-preview-signature.py
+          python3 tools/android/verify-preview-apk.py --probe
+          ./gradlew :app:signingReport --console=plain --no-daemon > "$RUNNER_TEMP/preview-signing-report.txt"
+          python3 tools/android/verify-preview-apk.py --signing-report "$RUNNER_TEMP/preview-signing-report.txt"
+
       - name: Test popup selection and Anki export in Chromium
         env:
           NODE_PATH: ${{ runner.temp }}/dictionary-browser/node_modules
