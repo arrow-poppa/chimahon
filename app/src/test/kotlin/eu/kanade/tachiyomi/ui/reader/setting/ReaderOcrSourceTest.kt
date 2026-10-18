@@ -42,6 +42,14 @@ class ReaderOcrSourceTest {
     }
 
     @Test
+    fun `every Paddle model is offered only in local OCR builds`() {
+        val paddle = ReaderOcrSource.entries.filter { it.recognitionEngine?.paddleRecognizer != null }
+        assertEquals(7, paddle.size)
+        assertTrue(ReaderOcrSource.availableSources(true, false).containsAll(paddle))
+        assertTrue(ReaderOcrSource.availableSources(false, false).none { it in paddle })
+    }
+
+    @Test
     fun `preference key is app state scoped per manga`() {
         val firstMangaKey = readerOcrSourcePreferenceKey(1)
         val secondMangaKey = readerOcrSourcePreferenceKey(2)

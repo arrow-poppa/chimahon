@@ -38,9 +38,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import chimahon.ocr.OcrCacheManager
+import chimahon.ocr.PaddleDetector
+import chimahon.ocr.PaddleRecognizer
 import dev.icerock.moko.resources.StringResource
 import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.tachiyomi.data.ocr.ModelDownloader
+import eu.kanade.tachiyomi.data.ocr.OcrEngineType
+import eu.kanade.tachiyomi.data.ocr.PaddleModelDownloader
 import eu.kanade.tachiyomi.ui.dictionary.DictionaryPreferences
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import eu.kanade.tachiyomi.util.system.toast
@@ -77,6 +81,8 @@ object SettingsOcrScreen : SearchableSettings {
 
         val ocrEnginePref = dictionaryPreferences.ocrEngine()
         val ocrEngine by ocrEnginePref.collectAsState()
+        val paddleDetectorPref = dictionaryPreferences.paddleDetector()
+        val paddleDetector by paddleDetectorPref.collectAsState()
 
         val parallelOcrLimitPref = dictionaryPreferences.parallelOcrLimit()
         val parallelOcrLimit by parallelOcrLimitPref.collectAsState()
@@ -111,7 +117,7 @@ object SettingsOcrScreen : SearchableSettings {
 
         val parallelOcrSubtitle = when {
             parallelOcrLimit == 1 -> "1 chapter (Recommended - safe and stable)"
-            ocrEngine == "local" || ocrEngine == "paddle" -> "$parallelOcrLimit chapters (Running multiple OCR tasks on-device simultaneously will increase battery drain and cause the device to heat up)"
+            OcrEngineType.fromPreference(ocrEngine).isOnDevice -> "$parallelOcrLimit chapters (Running multiple OCR tasks on-device simultaneously will increase battery drain and cause the device to heat up)"
             else -> "$parallelOcrLimit chapters (Running multiple OCR tasks online simultaneously may cause temporary rate limits or IP blocks)"
         }
 
@@ -130,7 +136,7 @@ object SettingsOcrScreen : SearchableSettings {
                             *if (eu.kanade.tachiyomi.BuildConfig.HAS_LOCAL_OCR) {
                                 arrayOf(
                                     "local" to "Local (On-Device)",
-                                    "paddle" to "Paddle OCR (On-Device)",
+                                    *PaddleRecognizer.entries.map { it.preference to it.label }.toTypedArray(),
                                 )
                             } else {
                                 emptyArray()
@@ -143,6 +149,22 @@ object SettingsOcrScreen : SearchableSettings {
                             }
                             if (value == "paddle") {
                                 Injekt.get<ModelDownloader>().triggerPaddleDownload()
+                            }
+                            OcrEngineType.fromPreference(value).paddleRecognizer?.takeIf { it != PaddleRecognizer.MANGA }?.let {
+                                Injekt.get<PaddleModelDownloader>().triggerSelection(chimahon.ocr.PaddleModelSelection(it, PaddleDetector.fromPreference(paddleDetector)))
+                            }
+                            true
+                        },
+                    ),
+                    Preference.PreferenceItem.ListPreference(
+                        preference = paddleDetectorPref,
+                        entries = PaddleDetector.entries.associate { it.id to it.label }.toPersistentMap(),
+                        title = "Paddle OCR detector",
+                        enabled = OcrEngineType.fromPreference(ocrEngine).paddleRecognizer?.let { it != PaddleRecognizer.MANGA } == true,
+                        subtitle = "%s · Manga keeps its own detector. All models run on CPU.",
+                        onValueChanged = { value ->
+                            OcrEngineType.fromPreference(ocrEngine).paddleRecognizer?.takeIf { it != PaddleRecognizer.MANGA }?.let {
+                                Injekt.get<PaddleModelDownloader>().triggerSelection(chimahon.ocr.PaddleModelSelection(it, PaddleDetector.fromPreference(value)))
                             }
                             true
                         },

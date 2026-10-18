@@ -69,6 +69,28 @@ class ModelBundleInstallerTest {
         assertFalse(File(installed, "obsolete.so").exists())
     }
 
+    @Test
+    fun checksumFailurePreservesInstalledComponentAndOtherModels() {
+        val installed = File(directory, "paddle_rec_tiny").apply { mkdirs() }
+        File(installed, "model.bin").writeText("working")
+        val detector = File(directory, "paddle_det_tiny").apply { mkdirs() }
+        File(detector, "model.bin").writeText("shared detector")
+        assertThrows(IllegalStateException::class.java) {
+            ModelBundleInstaller.install(archive("paddle_rec_tiny/model.bin" to "bad"), directory, "paddle_rec_tiny", listOf("model.bin"), mapOf("model.bin" to "0".repeat(64)))
+        }
+        assertEquals("working", File(installed, "model.bin").readText())
+        assertEquals("shared detector", File(detector, "model.bin").readText())
+    }
+
+    @Test
+    fun verifiedComponentCanBeInstalledWithoutOtherModels() {
+        val content = "new weights"
+        val hash = java.security.MessageDigest.getInstance("SHA-256").digest(content.toByteArray()).joinToString("") { "%02x".format(it) }
+        ModelBundleInstaller.install(archive("paddle_det_small/model.bin" to content), directory, "paddle_det_small", listOf("model.bin"), mapOf("model.bin" to hash))
+        assertEquals(content, File(directory, "paddle_det_small/model.bin").readText())
+        assertFalse(File(directory, "paddle_rec_tiny").exists())
+    }
+
     private fun archive(vararg entries: Pair<String, String>): ByteArrayInputStream {
         val output = ByteArrayOutputStream()
         ZipOutputStream(output).use { zip ->

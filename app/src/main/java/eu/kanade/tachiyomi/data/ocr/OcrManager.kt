@@ -12,19 +12,17 @@ import eu.kanade.tachiyomi.data.download.DownloadProvider
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalOrder
-import tachiyomi.domain.storage.service.StorageManager
-import tachiyomi.source.local.isLocal
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -39,6 +37,8 @@ import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.source.service.SourceManager
+import tachiyomi.domain.storage.service.StorageManager
+import tachiyomi.source.local.isLocal
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import chimahon.ocr.OcrTextBlock as ChimahonOcrTextBlock
@@ -549,6 +549,8 @@ class OcrManager(
             val isLocalSource = source.isLocal()
             val sourceLang = if (isLocalSource) "other" else (source as? HttpSource)?.lang ?: "other"
 
+            val selection = currentOcrSelection()
+            val cacheVariant = selection.cacheVariant
             val dictPrefs = Injekt.get<eu.kanade.tachiyomi.ui.dictionary.DictionaryPreferences>()
             val profile = dictPrefs.profileResolver.resolve(
                 mangaId = manga.id,
@@ -624,7 +626,7 @@ class OcrManager(
                         return OcrTaskResult.CANCELLED
                     }
 
-                    val existingBlocks = ocrCacheManager.loadOcrBlocks(manga, chapter, source, pageIndex)
+                    val existingBlocks = ocrCacheManager.loadOcrBlocks(manga, chapter, source, pageIndex, cacheVariant = cacheVariant)
                     if (existingBlocks != null) {
                         logcat { "OcrManager: page $pageIndex already cached for chapter ${chapter.name}" }
                         updateStoredTask(chapterId) {
@@ -667,7 +669,7 @@ class OcrManager(
 
                     val blocks = try {
                         val result = retryWithBackoff(times = 3) {
-                            recognizePage(bytes = bytes, language = ocrLang)
+                            recognizePage(bytes = bytes, language = ocrLang, selection = selection)
                         }
                         result.mapNotNull { r ->
                             val bbox = r.tightBoundingBox
@@ -735,6 +737,7 @@ class OcrManager(
                                 )
                             },
                             language = ocrLang.bcp47,
+                            cacheVariant = cacheVariant,
                         )
                     } catch (e: CancellationException) {
                         throw e
@@ -753,7 +756,7 @@ class OcrManager(
                     logcat(LogPriority.INFO) { "OcrManager: retrying $failedPages failed pages for chapter ${chapter.name}" }
                     for (pageIndex in 0 until pageCount) {
                         if (stopRequested() || ocrStore.get(chapterId) == null) break
-                        if (ocrCacheManager.loadOcrBlocks(manga, chapter, source, pageIndex) != null) continue
+                        if (ocrCacheManager.loadOcrBlocks(manga, chapter, source, pageIndex, cacheVariant = cacheVariant) != null) continue
 
                         val bytes = try {
                             imageProvider.getPageBytes(pageIndex)
@@ -761,7 +764,7 @@ class OcrManager(
 
                         try {
                             val result = retryWithBackoff(times = 3) {
-                                recognizePage(bytes = bytes, language = ocrLang)
+                                recognizePage(bytes = bytes, language = ocrLang, selection = selection)
                             }
                             val blocks = result.mapNotNull { r ->
                                 val bbox = r.tightBoundingBox
@@ -814,6 +817,7 @@ class OcrManager(
                                     )
                                 },
                                 language = ocrLang.bcp47,
+                                cacheVariant = cacheVariant,
                             )
                         } catch (e: CancellationException) {
                             throw e
@@ -826,7 +830,7 @@ class OcrManager(
                 imageProvider.close()
             }
 
-            val cachedPageCount = countCachedPages(manga, chapter, source, pageCount)
+            val cachedPageCount = countCachedPages(manga, chapter, source, pageCount, cacheVariant)
             if (cachedPageCount == pageCount) {
                 chapterRepository.update(ChapterUpdate(id = chapterId, isOcrReady = true))
                 logcat { "OcrManager: completed chapter ${chapter.name}" }
@@ -854,10 +858,11 @@ class OcrManager(
         chapter: Chapter,
         source: Source,
         pageCount: Int,
+        cacheVariant: String? = null,
     ): Int {
         var cachedPages = 0
         for (pageIndex in 0 until pageCount) {
-            if (ocrCacheManager.loadOcrBlocks(manga, chapter, source, pageIndex) != null) {
+            if (ocrCacheManager.loadOcrBlocks(manga, chapter, source, pageIndex, cacheVariant = cacheVariant) != null) {
                 cachedPages++
             }
         }

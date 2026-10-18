@@ -35,16 +35,24 @@ enum class ReaderOcrSource(
         persistentCacheVariant = "paddle",
         recognitionEngine = OcrEngineType.PADDLE,
     ),
+    PADDLE_LATIN(usesMokuro = false, usesPersistentCache = false, persistentCacheVariant = "paddle_latin", recognitionEngine = OcrEngineType.PADDLE_LATIN),
+    PADDLE_MULTILINGUAL(usesMokuro = false, usesPersistentCache = false, persistentCacheVariant = "paddle_multilingual", recognitionEngine = OcrEngineType.PADDLE_MULTILINGUAL),
+    PADDLE_CYRILLIC(usesMokuro = false, usesPersistentCache = false, persistentCacheVariant = "paddle_cyrillic", recognitionEngine = OcrEngineType.PADDLE_CYRILLIC),
+    PADDLE_ARABIC(usesMokuro = false, usesPersistentCache = false, persistentCacheVariant = "paddle_arabic", recognitionEngine = OcrEngineType.PADDLE_ARABIC),
+    PADDLE_GREEK(usesMokuro = false, usesPersistentCache = false, persistentCacheVariant = "paddle_greek", recognitionEngine = OcrEngineType.PADDLE_GREEK),
+    PADDLE_KOREAN(usesMokuro = false, usesPersistentCache = false, persistentCacheVariant = "paddle_korean", recognitionEngine = OcrEngineType.PADDLE_KOREAN),
     ;
 
     val persistsOcrResults: Boolean
         get() = usesPersistentCache || persistentCacheVariant != null
 
+    fun cacheVariant(selection: eu.kanade.tachiyomi.data.ocr.OcrSelection): String? = selection.cacheVariant ?: persistentCacheVariant
+
     companion object {
         fun availableSources(localOcrAvailable: Boolean, mokuroAvailable: Boolean): List<ReaderOcrSource> {
             return entries.filter { source ->
                 when (source) {
-                    LOCAL, PADDLE -> localOcrAvailable
+                    LOCAL, PADDLE, PADDLE_LATIN, PADDLE_MULTILINGUAL, PADDLE_CYRILLIC, PADDLE_ARABIC, PADDLE_GREEK, PADDLE_KOREAN -> localOcrAvailable
                     MOKURO -> mokuroAvailable
                     else -> true
                 }

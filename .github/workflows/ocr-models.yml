@@ -1,0 +1,45 @@
+name: Build OCR models
+on:
+  push:
+    branches: [agent/byok-ai-v2.4.7-ocr-models]
+    paths: ["tools/ocr-models/**", ".github/workflows/ocr-models.yml"]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: ocr-models-v1
+  cancel-in-progress: false
+jobs:
+  convert:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - name: Install CPU conversion tools
+        run: |
+          pip install --no-deps pnnx==20260526
+          pip install ncnn==1.0.20260526 onnx==1.23.2 onnxruntime==1.31.0 PyYAML==6.0.3 pillow==13.0.0 numpy==2.5.4
+          sudo apt-get update -qq
+          sudo apt-get install -y fonts-noto-cjk fonts-noto-core
+          curl --fail --location --retry 3 https://github.com/Tencent/ncnn/releases/download/20260526/ncnn-20260526-ubuntu-2404.zip -o ncnn.zip
+          echo 'c6daf0c8fb2546de420c7b320e2ce62ba764163ace0ba63a2ea0cdfca70d684d  ncnn.zip' | sha256sum --check
+          unzip -q ncnn.zip -d ncnn-tools
+      - name: Convert all pinned models
+        run: |
+          python tools/ocr-models/convert.py --work model-build --pnnx "$(python -c 'import importlib.util; print(importlib.util.find_spec("pnnx").submodule_search_locations[0] + "/pnnx")')" --ncnnoptimize ncnn-tools/ncnn-20260526-ubuntu-2404/bin/ncnnoptimize
+          python tools/ocr-models/runtime.py --work model-build
+      - name: Verify numerical outputs and CTC decoding
+        run: python tools/ocr-models/validate.py --work model-build --font /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc --arabic-font /usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: lookitan-ocr-v1
+          path: model-build/dist/*
+      - name: Publish immutable model release on the fork
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$GITHUB_REPOSITORY" = arrow-poppa/chimahon
+          gh release create lookitan-ocr-v1 model-build/dist/* --target "$GITHUB_SHA" --title 'Lookitan OCR models v1 (CPU)' --notes 'Pinned PaddleOCR models converted to NCNN FP16. Includes numerical and CTC comparisons against ONNX on desktop CPU. Android inference/accuracy is not established by these checks.' --latest=false

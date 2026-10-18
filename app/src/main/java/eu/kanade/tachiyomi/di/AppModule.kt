@@ -10,11 +10,12 @@ import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import chimahon.DictionaryRepository
 import chimahon.audio.WordAudioPreferences
 import chimahon.audio.WordAudioService
+import chimahon.novel.data.NovelCategoryStorage
 import chimahon.novel.manager.NovelSourceManager
+import chimahon.novel.ui.reader.NovelReaderActivity
 import chimahon.ocr.LensClient
 import chimahon.ocr.OcrCacheManager
-import chimahon.novel.data.NovelCategoryStorage
-import chimahon.novel.ui.reader.NovelReaderActivity
+import dataanime.Animehistory
 import eu.kanade.domain.track.store.DelayedAnimeTrackingStore
 import eu.kanade.domain.track.store.DelayedTrackingStore
 import eu.kanade.tachiyomi.animeextension.AnimeExtensionManager
@@ -25,9 +26,9 @@ import eu.kanade.tachiyomi.data.SyncStatus
 import eu.kanade.tachiyomi.data.animedownload.AnimeDownloadCache
 import eu.kanade.tachiyomi.data.animedownload.AnimeDownloadManager
 import eu.kanade.tachiyomi.data.animedownload.AnimeDownloadProvider
-import eu.kanade.tachiyomi.data.cache.ChapterCache
 import eu.kanade.tachiyomi.data.cache.AnimeBackgroundCache
 import eu.kanade.tachiyomi.data.cache.AnimeCoverCache
+import eu.kanade.tachiyomi.data.cache.ChapterCache
 import eu.kanade.tachiyomi.data.cache.CoverCache
 import eu.kanade.tachiyomi.data.cache.PagePreviewCache
 import eu.kanade.tachiyomi.data.connections.ConnectionsManager
@@ -35,13 +36,13 @@ import eu.kanade.tachiyomi.data.download.DownloadCache
 import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.data.download.DownloadProvider
 import eu.kanade.tachiyomi.data.download.MokuroSidecarCopier
+import eu.kanade.tachiyomi.data.model.ModelVersionResolver
 import eu.kanade.tachiyomi.data.ocr.LocalOcrBridge
-import eu.kanade.tachiyomi.data.ocr.PaddleOcrBridge
 import eu.kanade.tachiyomi.data.ocr.ModelDownloader
-import eu.kanade.tachiyomi.data.panel.PanelModelDownloader
 import eu.kanade.tachiyomi.data.ocr.OcrManager
 import eu.kanade.tachiyomi.data.ocr.OcrStore
-import eu.kanade.tachiyomi.data.model.ModelVersionResolver
+import eu.kanade.tachiyomi.data.ocr.PaddleOcrBridge
+import eu.kanade.tachiyomi.data.panel.PanelModelDownloader
 import eu.kanade.tachiyomi.data.saver.ImageSaver
 import eu.kanade.tachiyomi.data.sync.service.GoogleDriveService
 import eu.kanade.tachiyomi.data.track.TrackerManager
@@ -49,8 +50,8 @@ import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.network.JavaScriptEngine
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.source.AndroidSourceManager
-import eu.kanade.tachiyomi.ui.library.novels.ChimaReaderActivity
 import eu.kanade.tachiyomi.ui.dictionary.DictionaryPreferences
+import eu.kanade.tachiyomi.ui.library.novels.ChimaReaderActivity
 import eu.kanade.tachiyomi.ui.player.ExternalIntents
 import eu.kanade.tachiyomi.util.LocalHttpServerHolder
 import eu.kanade.tachiyomi.util.system.isDebugBuildType
@@ -63,13 +64,10 @@ import nl.adaptivity.xmlutil.core.XmlVersion
 import nl.adaptivity.xmlutil.serialization.XML
 import tachiyomi.core.common.storage.AndroidStorageFolderProvider
 import tachiyomi.core.common.storage.UniFileTempFileManager
+import tachiyomi.data.AndroidDatabaseHandler
 import tachiyomi.data.Chapters
 import tachiyomi.data.Database
-import tachiyomi.data.AndroidDatabaseHandler
 import tachiyomi.data.DatabaseHandler
-import tachiyomi.data.novel.NovelChapterRepositoryImpl
-import tachiyomi.data.novel.NovelHistoryRepositoryImpl
-import tachiyomi.data.novel.NovelRepositoryImpl
 import tachiyomi.data.DateColumnAdapter
 import tachiyomi.data.FetchTypeColumnAdapter
 import tachiyomi.data.History
@@ -80,6 +78,9 @@ import tachiyomi.data.Reading_sessions
 import tachiyomi.data.StringListColumnAdapter
 import tachiyomi.data.handlers.anime.AndroidAnimeDatabaseHandler
 import tachiyomi.data.handlers.anime.AnimeDatabaseHandler
+import tachiyomi.data.novel.NovelChapterRepositoryImpl
+import tachiyomi.data.novel.NovelHistoryRepositoryImpl
+import tachiyomi.data.novel.NovelRepositoryImpl
 import tachiyomi.data.track.anime.AnimeTrackRepositoryImpl
 import tachiyomi.domain.novel.repository.NovelChapterRepository
 import tachiyomi.domain.novel.repository.NovelHistoryRepository
@@ -90,14 +91,13 @@ import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.storage.service.StorageManager
 import tachiyomi.domain.track.anime.repository.AnimeTrackRepository
 import tachiyomi.mi.data.AnimeDatabase
+import tachiyomi.source.local.entries.anime.LocalAnimeFetchTypeManager
 import tachiyomi.source.local.image.LocalCoverManager
 import tachiyomi.source.local.image.anime.LocalAnimeBackgroundManager
 import tachiyomi.source.local.image.anime.LocalAnimeCoverManager
 import tachiyomi.source.local.image.anime.LocalEpisodeThumbnailManager
 import tachiyomi.source.local.io.LocalSourceFileSystem
 import tachiyomi.source.local.io.anime.LocalAnimeSourceFileSystem
-import tachiyomi.source.local.entries.anime.LocalAnimeFetchTypeManager
-import dataanime.Animehistory
 import uy.kohesive.injekt.api.InjektModule
 import uy.kohesive.injekt.api.InjektRegistrar
 import uy.kohesive.injekt.api.addSingleton
@@ -343,6 +343,7 @@ class AppModule(val app: Application) : InjektModule {
         addSingletonFactory { LensClient() }
         addSingletonFactory { LocalOcrBridge(app) }
         addSingletonFactory { PaddleOcrBridge(app) }
+        addSingletonFactory { eu.kanade.tachiyomi.data.ocr.PaddleModelDownloader(app, get<NetworkHelper>().client) }
         addSingletonFactory { ModelVersionResolver(get<NetworkHelper>().client) }
         addSingletonFactory { ModelDownloader(app, get<NetworkHelper>().client, get(), get()) }
         addSingletonFactory { OcrStore(app) }

@@ -193,13 +193,14 @@ private fun OcrSourceAction(
 
 @Composable
 private fun ReaderOcrSource.displayName(): String {
+    recognitionEngine?.paddleRecognizer?.let { return it.label }
     return stringResource(
         when (this) {
             ReaderOcrSource.AUTOMATIC -> KMR.strings.ocr_source_automatic
             ReaderOcrSource.MOKURO -> KMR.strings.ocr_source_mokuro
             ReaderOcrSource.GOOGLE_LENS -> KMR.strings.ocr_source_google_lens
             ReaderOcrSource.LOCAL -> KMR.strings.ocr_source_local
-            ReaderOcrSource.PADDLE -> KMR.strings.ocr_source_paddle
+            else -> KMR.strings.ocr_source_paddle
         },
     )
 }

@@ -8,14 +8,19 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import chimahon.ocr.PADDLE_MODELS_VERSION
+import chimahon.ocr.PaddleDetector
+import chimahon.ocr.PaddleRecognizer
 import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.tachiyomi.data.ocr.ModelDownloader
+import eu.kanade.tachiyomi.data.ocr.PaddleModelDownloader
 import eu.kanade.tachiyomi.data.panel.PanelModelDownloader
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.collections.immutable.toPersistentList
@@ -35,17 +40,25 @@ internal fun getOcrModelsGroup(): Preference.PreferenceGroup {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val ocr = remember { Injekt.get<ModelDownloader>() }
+    val paddle = remember { Injekt.get<PaddleModelDownloader>() }
+    val progress by paddle.status.collectAsState()
+    val components = remember {
+        PaddleDetector.entries.map { Triple(it.bundle, it.label, "Shared text detector for the new Paddle OCR models.") } +
+            PaddleRecognizer.entries.filter { it != PaddleRecognizer.MANGA }.map {
+                Triple(it.bundle, it.label, if (it == PaddleRecognizer.LATIN) "Lightweight recognizer for Latin scripts. For Romanian, select Multilingual." else "Recognition model and matching character dictionary.")
+            } + Triple("paddle_runtime", "Paddle OCR shared runtime", "Shared CPU libraries for the new Paddle models.")
+    }
     val panel = remember { Injekt.get<PanelModelDownloader>() }
     val titles = listOf(
         stringResource(MR.strings.model_ocr_lens),
-        stringResource(MR.strings.model_ocr_paddle),
+        "PaddleOCR v6 — Manga",
         stringResource(MR.strings.model_panel_detection),
-    )
+    ) + components.map { it.second }
     val descriptions = listOf(
         "Reads text offline when Local OCR is selected.",
         "Reads text offline when Paddle OCR is selected.",
         "Finds manga panels for panel-by-panel navigation.",
-    )
+    ) + components.map { it.third }
     var statuses by remember { mutableStateOf<List<OcrModelStatus>>(emptyList()) }
     var selected by remember { mutableStateOf<Int?>(null) }
     var refreshing by remember { mutableStateOf(0) }
@@ -55,9 +68,9 @@ internal fun getOcrModelsGroup(): Preference.PreferenceGroup {
     LaunchedEffect(refreshing) {
         while (true) {
             statuses = withIOContext {
-                val installed = listOf(ocr.isDownloaded, ocr.isPaddleDownloaded, panel.isDownloaded)
-                val versions = listOf(ocr.lensVersionInstalled, ocr.paddleVersionInstalled, null)
-                listOf("screenai_models", "paddle_ocr", "panel_detector").mapIndexed { index, directory ->
+                val installed = listOf(ocr.isDownloaded, ocr.isPaddleDownloaded, panel.isDownloaded) + components.map { paddle.installed(it.first) }
+                val versions = listOf(ocr.lensVersionInstalled, ocr.paddleVersionInstalled, null) + components.map { PADDLE_MODELS_VERSION }
+                (listOf("screenai_models", "paddle_ocr", "panel_detector") + components.map { it.first }).mapIndexed { index, directory ->
                     val bytes = File(context.filesDir, directory).walkTopDown().filter { it.isFile }.sumOf { it.length() }
                     OcrModelStatus(installed[index], bytes, versions[index])
                 }
@@ -97,7 +110,8 @@ internal fun getOcrModelsGroup(): Preference.PreferenceGroup {
                                 when (index) {
                                     0 -> ocr.deleteLensModels()
                                     1 -> ocr.deletePaddleModels()
-                                    else -> panel.deleteModel()
+                                    2 -> panel.deleteModel()
+                                    else -> paddle.delete(components[index - 3].first)
                                 }
                             }
                             context.toast(if (deleted) MR.strings.model_deleted else MR.strings.cache_delete_error)
@@ -109,7 +123,8 @@ internal fun getOcrModelsGroup(): Preference.PreferenceGroup {
                         when (index) {
                             0 -> ocr.triggerDownload()
                             1 -> ocr.triggerPaddleDownload()
-                            else -> panel.triggerDownload()
+                            2 -> panel.triggerDownload()
+                            else -> paddle.trigger(components[index - 3].first)
                         }
                         selected = null
                     }
@@ -124,6 +139,7 @@ internal fun getOcrModelsGroup(): Preference.PreferenceGroup {
     val rows = titles.mapIndexed { index, title ->
         val status = statuses.getOrNull(index)
         val state = when {
+            index >= 3 && progress[components[index - 3].first] != null -> progress.getValue(components[index - 3].first)
             status == null -> "Checking…"
             status.installed -> "Installed${status.version?.let { " v$it" }.orEmpty()}"
             status.bytes > 0 -> "Incomplete download"

@@ -9,14 +9,17 @@ import chimahon.ocr.EngineLine
 import chimahon.ocr.NormalizedBBox
 import chimahon.ocr.OcrBitmapDecoder
 import chimahon.ocr.OcrLanguage
+import chimahon.ocr.PaddleDetector
+import chimahon.ocr.PaddleModelSelection
+import chimahon.ocr.PaddleRecognizer
 import chimahon.ocr.WritingDirection
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Semaphore
 import java.io.Closeable
 import java.io.File
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.sync.Semaphore
 
 // Detection/recognition thresholds copied from the ocrtest "Full Page Preset"
 // (full-page manga mode). Bubble preset (0.20/0.45/1.60) is intentionally not
@@ -47,8 +50,16 @@ data class PaddleOcrResult(
 
 class PaddleOcrEngine(
     context: Context,
+    recognizerId: String,
+    detectorId: String,
 ) : chimahon.ocr.OcrEngine, Closeable {
     private val TAG = "PaddleOcrEngine"
+    constructor(context: Context) : this(context, PaddleRecognizer.MANGA.id, PaddleDetector.TINY.id)
+
+    private val selection = PaddleModelSelection(
+        PaddleRecognizer.entries.first { it.id == recognizerId },
+        PaddleDetector.fromPreference(detectorId),
+    )
     private val appContext = context.applicationContext
 
     override val name: String = "Paddle OCR"
@@ -83,6 +94,7 @@ class PaddleOcrEngine(
         private val INFER_PERMITS: Int =
             if (Runtime.getRuntime().availableProcessors() >= 8) 2 else 1
 
+        private var librariesLoaded = false
         private val lock = Any()
         private val inferPermits = Semaphore(INFER_PERMITS)
     }
@@ -110,11 +122,15 @@ class PaddleOcrEngine(
         // Unlike ocrtest (APK-bundled .so via loadLibrary), the prebuilt libs
         // live in downloaded storage, so they are loaded by absolute path.
         try {
-            val libDir = File(File(appContext.filesDir, MODEL_DIR), "lib/$abi")
-            System.load(File(libDir, "libc++_shared.so").absolutePath)
-            System.load(File(libDir, "libomp.so").absolutePath)
-            System.load(File(libDir, "libpaddle_ocr.so").absolutePath)
-            Log.i(TAG, "libpaddle_ocr.so loaded successfully")
+            if (!librariesLoaded) {
+                val legacy = File(File(appContext.filesDir, MODEL_DIR), "lib/$abi")
+                val libDir = if (File(legacy, "libpaddle_ocr.so").isFile) legacy else File(appContext.filesDir, "paddle_runtime/lib/$abi")
+                System.load(File(libDir, "libc++_shared.so").absolutePath)
+                System.load(File(libDir, "libomp.so").absolutePath)
+                System.load(File(libDir, "libpaddle_ocr.so").absolutePath)
+                librariesLoaded = true
+                Log.i(TAG, "libpaddle_ocr.so loaded successfully")
+            }
         } catch (e: UnsatisfiedLinkError) {
             Log.e(TAG, "Failed to load libpaddle_ocr.so", e)
             return false
@@ -122,12 +138,15 @@ class PaddleOcrEngine(
 
         val start = SystemClock.elapsedRealtime()
         val modelDir = File(appContext.filesDir, MODEL_DIR)
+        val manga = selection.recognizer == PaddleRecognizer.MANGA
+        val detectorDir = if (manga) modelDir else File(appContext.filesDir, selection.detector.bundle)
+        val recognizerDir = if (manga) modelDir else File(appContext.filesDir, selection.recognizer.bundle)
         val success = nativeInit(
-            detParamAbsPath = File(modelDir, DET_PARAM).absolutePath,
-            detBinAbsPath = File(modelDir, DET_BIN).absolutePath,
-            recParamAbsPath = File(modelDir, REC_PARAM).absolutePath,
-            recBinAbsPath = File(modelDir, REC_BIN).absolutePath,
-            dictAbsPath = File(modelDir, DICT_TXT).absolutePath,
+            detParamAbsPath = File(detectorDir, if (manga) DET_PARAM else "model.param").absolutePath,
+            detBinAbsPath = File(detectorDir, if (manga) DET_BIN else "model.bin").absolutePath,
+            recParamAbsPath = File(recognizerDir, if (manga) REC_PARAM else "model.param").absolutePath,
+            recBinAbsPath = File(recognizerDir, if (manga) REC_BIN else "model.bin").absolutePath,
+            dictAbsPath = File(recognizerDir, if (manga) DICT_TXT else "dict.txt").absolutePath,
             numThreads = options.numThreads,
         )
         if (success) {
@@ -161,7 +180,12 @@ class PaddleOcrEngine(
                 return emptyList()
             }
             return try {
-                recognizeLocked(bitmap, PaddleOcrOptions(numThreads = deviceThreads), language).lines
+                val options = if (selection.recognizer == PaddleRecognizer.MANGA) {
+                    PaddleOcrOptions(numThreads = deviceThreads)
+                } else {
+                    PaddleOcrOptions(thresh = 0.3f, boxThresh = 0.4f, unclipRatio = 1.5f, numThreads = deviceThreads)
+                }
+                recognizeLocked(bitmap, options, language).lines
             } finally {
                 bitmap.recycle()
             }

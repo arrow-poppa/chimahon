@@ -14,6 +14,8 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import chimahon.ocr.OcrBitmapDecoder
+import chimahon.ocr.effectiveScanResolution
+import chimahon.ocr.isOcrAllowedForLanguage
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.domain.chapter.model.toDbChapter
 import eu.kanade.domain.manga.interactor.SetMangaViewerFlags
@@ -30,8 +32,8 @@ import eu.kanade.tachiyomi.data.database.models.toDomainChapter
 import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.data.download.DownloadProvider
 import eu.kanade.tachiyomi.data.download.model.Download
-import chimahon.ocr.effectiveScanResolution
-import chimahon.ocr.isOcrAllowedForLanguage
+import eu.kanade.tachiyomi.data.ocr.OcrSelection
+import eu.kanade.tachiyomi.data.ocr.currentOcrSelection
 import eu.kanade.tachiyomi.data.ocr.retryWithBackoff
 import eu.kanade.tachiyomi.data.saver.Image
 import eu.kanade.tachiyomi.data.saver.ImageSaver
@@ -81,9 +83,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.supervisorScope
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -98,13 +97,16 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlin.math.min
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import logcat.LogPriority
 
 import mihon.core.archive.archiveReader
 import mihon.core.archive.epubReader
+import mihon.domain.panel.repository.PanelDetectionRepository
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import tachiyomi.core.common.preference.toggle
 import tachiyomi.core.common.storage.UniFileTempFileManager
@@ -134,9 +136,8 @@ import tachiyomi.domain.manga.interactor.GetMergedMangaById
 import tachiyomi.domain.manga.interactor.GetMergedReferencesById
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.source.service.SourceManager
-import tachiyomi.source.local.isLocal
 import tachiyomi.source.local.io.Archive
-import mihon.domain.panel.repository.PanelDetectionRepository
+import tachiyomi.source.local.isLocal
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.io.File
@@ -144,6 +145,7 @@ import java.time.Instant
 import java.util.Collections.emptyList
 import java.util.Date
 import java.util.LinkedHashMap
+import kotlin.math.min
 
 /**
  * Presenter used by the activity to perform background operations.
@@ -191,6 +193,7 @@ class ReaderViewModel @JvmOverloads constructor(
         val chapterId: Long,
         val pageIndex: Int,
         val ocrSource: ReaderOcrSource,
+        val selection: OcrSelection = currentOcrSelection(ocrSource.recognitionEngine),
     )
 
     private data class MokuroChapterData(
@@ -437,6 +440,13 @@ class ReaderViewModel @JvmOverloads constructor(
     private val downloadAheadAmount = downloadPreferences.autoDownloadWhileReading().get()
 
     init {
+        kotlinx.coroutines.flow.combine(dictionaryPreferences.ocrEngine().changes(), dictionaryPreferences.paddleDetector().changes()) { engine, detector -> engine to detector }
+            .onEach {
+                cancelOcrScan()
+                ocrScannedChapterIds.clear()
+            }
+            .launchIn(viewModelScope)
+
         // To save state
         state.map { it.viewerChapters?.currChapter }
             .distinctUntilChanged()
@@ -1762,7 +1772,7 @@ class ReaderViewModel @JvmOverloads constructor(
         }
 
         if (ocrSource.persistsOcrResults) {
-            loadCachedOcrBlocks(page, ocrSource)?.let { cached ->
+            loadCachedOcrBlocks(page, ocrSource, cacheKey.selection)?.let { cached ->
                 return cached
             }
         }
@@ -1776,7 +1786,7 @@ class ReaderViewModel @JvmOverloads constructor(
                     return@async emptyList()
                 }
 
-                fetchOcrBlocks(page, ocrSource)
+                fetchOcrBlocks(page, ocrSource, cacheKey.selection)
             }.also { created ->
                 ocrInFlight[cacheKey] = created
             }
@@ -1803,7 +1813,7 @@ class ReaderViewModel @JvmOverloads constructor(
         }
 
         return if (ocrSource.persistsOcrResults) {
-            loadCachedOcrBlocks(page, ocrSource).orEmpty()
+            loadCachedOcrBlocks(page, ocrSource, cacheKey.selection).orEmpty()
         } else {
             emptyList()
         }
@@ -1812,19 +1822,20 @@ class ReaderViewModel @JvmOverloads constructor(
     private suspend fun loadCachedOcrBlocks(
         page: ReaderPage,
         ocrSource: ReaderOcrSource,
+        selection: OcrSelection,
     ): List<eu.kanade.tachiyomi.ui.reader.viewer.OcrTextBlock>? {
         val domainChapter = page.chapter.chapter.toDomainChapter() ?: return null
         val chapterId = domainChapter.id ?: return null
         val manga = state.value.manga ?: return null
         val mangaSource = sourceManager.getOrStub(manga.source)
-        val cacheKey = OcrCacheKey(chapterId = chapterId, pageIndex = page.index, ocrSource = ocrSource)
+        val cacheKey = OcrCacheKey(chapterId = chapterId, pageIndex = page.index, ocrSource = ocrSource, selection = selection)
 
         val diskBlocks = ocrCacheManager.loadOcrBlocks(
             manga = manga,
             chapter = domainChapter,
             source = mangaSource,
             pageIndex = page.index,
-            cacheVariant = ocrSource.persistentCacheVariant,
+            cacheVariant = ocrSource.cacheVariant(selection),
         )
             ?.takeIf { it.isNotEmpty() }
             ?.map { it.toViewerBlock() }
@@ -2329,13 +2340,14 @@ class ReaderViewModel @JvmOverloads constructor(
     private suspend fun fetchOcrBlocks(
         page: ReaderPage,
         ocrSource: ReaderOcrSource,
+        selection: OcrSelection,
     ): List<eu.kanade.tachiyomi.ui.reader.viewer.OcrTextBlock> {
         if (!isOcrEnabled()) return emptyList()
         val startMs = SystemClock.elapsedRealtime()
         val dbChapter = page.chapter.chapter
         val domainChapter = dbChapter.toDomainChapter() ?: return emptyList()
         val chapterId = domainChapter.id ?: return emptyList()
-        val cacheKey = OcrCacheKey(chapterId = chapterId, pageIndex = page.index, ocrSource = ocrSource)
+        val cacheKey = OcrCacheKey(chapterId = chapterId, pageIndex = page.index, ocrSource = ocrSource, selection = selection)
 
         val manga = state.value.manga ?: return emptyList()
         val source = sourceManager.getOrStub(manga.source)
@@ -2372,6 +2384,7 @@ class ReaderViewModel @JvmOverloads constructor(
                 }
                 savePersistentOcrBlocks(
                     ocrSource = ocrSource,
+                    selection = selection,
                     manga = manga,
                     chapter = domainChapter,
                     source = source,
@@ -2426,6 +2439,7 @@ class ReaderViewModel @JvmOverloads constructor(
                 }
                 savePersistentOcrBlocks(
                     ocrSource = ocrSource,
+                    selection = selection,
                     manga = manga,
                     chapter = domainChapter,
                     source = source,
@@ -2460,7 +2474,7 @@ class ReaderViewModel @JvmOverloads constructor(
                 chapter = domainChapter,
                 source = source,
                 pageIndex = page.index,
-                cacheVariant = ocrSource.persistentCacheVariant,
+                cacheVariant = ocrSource.cacheVariant(selection),
             )
             if (diskBlocks != null && diskBlocks.isNotEmpty()) {
                 ocrCacheMutex.withLock {
@@ -2506,7 +2520,7 @@ class ReaderViewModel @JvmOverloads constructor(
                 eu.kanade.tachiyomi.data.ocr.recognizePage(
                     bytes = ocrBytes,
                     language = ocrLang,
-                    engineType = ocrSource.recognitionEngine,
+                    selection = selection,
                 )
             }
 
@@ -2562,6 +2576,7 @@ class ReaderViewModel @JvmOverloads constructor(
 
             savePersistentOcrBlocks(
                 ocrSource = ocrSource,
+                selection = selection,
                 manga = manga,
                 chapter = domainChapter,
                 source = source,
@@ -2613,8 +2628,9 @@ class ReaderViewModel @JvmOverloads constructor(
         pageIndex: Int,
         blocks: List<chimahon.ocr.OcrTextBlock>,
         language: String,
+        selection: OcrSelection,
     ) {
-        if (!ocrSource.persistsOcrResults) return
+        if (!ocrSource.persistsOcrResults || blocks.isEmpty()) return
         try {
             ocrCacheManager.saveOcrBlocks(
                 manga = manga,
@@ -2623,7 +2639,7 @@ class ReaderViewModel @JvmOverloads constructor(
                 pageIndex = pageIndex,
                 blocks = blocks,
                 language = language,
-                cacheVariant = ocrSource.persistentCacheVariant,
+                cacheVariant = ocrSource.cacheVariant(selection),
             )
         } catch (e: CancellationException) {
             throw e

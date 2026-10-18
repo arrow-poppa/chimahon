@@ -4,6 +4,9 @@ import android.graphics.Bitmap
 import chimahon.ocr.LensClient
 import chimahon.ocr.OcrLanguage
 import chimahon.ocr.OcrResult
+import chimahon.ocr.PaddleDetector
+import chimahon.ocr.PaddleModelSelection
+import chimahon.ocr.PaddleRecognizer
 import chimahon.ocr.processImageWithChunks
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -13,30 +16,42 @@ import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.io.ByteArrayOutputStream
 
-enum class OcrEngineType {
-    CLOUD,
-    LOCAL,
-    PADDLE,
+enum class OcrEngineType(val preference: String, val paddleRecognizer: PaddleRecognizer? = null) {
+    CLOUD("cloud"),
+    LOCAL("local"),
+    PADDLE("paddle", PaddleRecognizer.MANGA),
+    PADDLE_LATIN("paddle_rec_tiny", PaddleRecognizer.LATIN),
+    PADDLE_MULTILINGUAL("paddle_rec_small", PaddleRecognizer.MULTILINGUAL),
+    PADDLE_CYRILLIC("paddle_rec_cyrillic", PaddleRecognizer.CYRILLIC),
+    PADDLE_ARABIC("paddle_rec_arabic", PaddleRecognizer.ARABIC),
+    PADDLE_GREEK("paddle_rec_el", PaddleRecognizer.GREEK),
+    PADDLE_KOREAN("paddle_rec_korean", PaddleRecognizer.KOREAN),
     ;
 
+    val isOnDevice: Boolean get() = this != CLOUD
+
     companion object {
-        fun fromPreference(value: String): OcrEngineType {
-            return when (value) {
-                "local" -> LOCAL
-                "paddle" -> PADDLE
-                else -> CLOUD
-            }
-        }
+        fun fromPreference(value: String): OcrEngineType = entries.find { it.preference == value } ?: CLOUD
     }
+}
+
+data class OcrSelection(val engine: OcrEngineType, val detector: PaddleDetector = PaddleDetector.TINY) {
+    val paddle: PaddleModelSelection? get() = engine.paddleRecognizer?.let { PaddleModelSelection(it, detector) }
+    val cacheVariant: String? get() = paddle?.cacheVariant
+}
+
+fun currentOcrSelection(engine: OcrEngineType? = null): OcrSelection {
+    val preferences = Injekt.get<eu.kanade.tachiyomi.ui.dictionary.DictionaryPreferences>()
+    return OcrSelection(engine ?: OcrEngineType.fromPreference(preferences.ocrEngine().get()), PaddleDetector.fromPreference(preferences.paddleDetector().get()))
 }
 
 suspend fun recognizePage(
     bytes: ByteArray,
     language: OcrLanguage,
     engineType: OcrEngineType? = null,
+    selection: OcrSelection = currentOcrSelection(engineType),
 ): List<OcrResult> {
-    val dictPrefs = Injekt.get<eu.kanade.tachiyomi.ui.dictionary.DictionaryPreferences>()
-    val resolvedEngineType = engineType ?: OcrEngineType.fromPreference(dictPrefs.ocrEngine().get())
+    val resolvedEngineType = selection.engine
 
     if (resolvedEngineType == OcrEngineType.LOCAL) {
         val localOcrBridge = Injekt.get<LocalOcrBridge>()
@@ -69,29 +84,25 @@ suspend fun recognizePage(
         return result
     }
 
-    if (resolvedEngineType == OcrEngineType.PADDLE) {
+    if (selection.paddle != null) {
+        val paddleSelection = checkNotNull(selection.paddle)
         val paddleOcrBridge = Injekt.get<PaddleOcrBridge>()
-        val modelDownloader = Injekt.get<ModelDownloader>()
-        if (!modelDownloader.isPaddleDownloaded) {
-            logcat("OcrEngineSelector", LogPriority.WARN) { "paddle selected but models not downloaded, triggering download" }
-            modelDownloader.triggerPaddleDownload()
-            return emptyList()
-        }
-        if (!paddleOcrBridge.isAvailable) return emptyList()
-        if (!paddleOcrBridge.isInitialized) {
-            paddleOcrBridge.init()
-        }
-        if (!paddleOcrBridge.isInitialized) {
-            logcat("OcrEngineSelector", LogPriority.WARN) { "paddle engine failed to initialize" }
-            return emptyList()
+        check(paddleOcrBridge.isAvailable) { "Paddle OCR is unavailable in this build" }
+        if (paddleSelection.recognizer == PaddleRecognizer.MANGA) {
+            val models = Injekt.get<ModelDownloader>()
+            if (!models.isPaddleDownloaded) models.downloadPaddleAndExtract().getOrThrow()
+        } else {
+            Injekt.get<PaddleModelDownloader>().ensure(paddleSelection)
         }
         val result = processImageWithChunks(bytes, language) { chunk ->
             val chunkBytes = withContext(Dispatchers.Default) {
                 chunk.bitmap.toJpegBytes(85)
             }
-            val lines = paddleOcrBridge.recognize(chunkBytes, language)
-            chunk.bitmap.recycle()
-            lines
+            try {
+                paddleOcrBridge.recognize(chunkBytes, language, paddleSelection)
+            } finally {
+                chunk.bitmap.recycle()
+            }
         }
         if (result.isEmpty()) {
             logcat("OcrEngineSelector", LogPriority.WARN) { "paddle engine returned no results" }
@@ -109,9 +120,9 @@ suspend fun recognizePage(
     bitmap: Bitmap,
     language: OcrLanguage,
     engineType: OcrEngineType? = null,
+    selection: OcrSelection = currentOcrSelection(engineType),
 ): List<OcrResult> {
-    val dictPrefs = Injekt.get<eu.kanade.tachiyomi.ui.dictionary.DictionaryPreferences>()
-    val resolvedEngineType = engineType ?: OcrEngineType.fromPreference(dictPrefs.ocrEngine().get())
+    val resolvedEngineType = selection.engine
 
     if (resolvedEngineType == OcrEngineType.LOCAL) {
         val localOcrBridge = Injekt.get<LocalOcrBridge>()
@@ -144,29 +155,25 @@ suspend fun recognizePage(
         return result
     }
 
-    if (resolvedEngineType == OcrEngineType.PADDLE) {
+    if (selection.paddle != null) {
+        val paddleSelection = checkNotNull(selection.paddle)
         val paddleOcrBridge = Injekt.get<PaddleOcrBridge>()
-        val modelDownloader = Injekt.get<ModelDownloader>()
-        if (!modelDownloader.isPaddleDownloaded) {
-            logcat("OcrEngineSelector", LogPriority.WARN) { "paddle selected but models not downloaded, triggering download" }
-            modelDownloader.triggerPaddleDownload()
-            return emptyList()
-        }
-        if (!paddleOcrBridge.isAvailable) return emptyList()
-        if (!paddleOcrBridge.isInitialized) {
-            paddleOcrBridge.init()
-        }
-        if (!paddleOcrBridge.isInitialized) {
-            logcat("OcrEngineSelector", LogPriority.WARN) { "paddle engine failed to initialize" }
-            return emptyList()
+        check(paddleOcrBridge.isAvailable) { "Paddle OCR is unavailable in this build" }
+        if (paddleSelection.recognizer == PaddleRecognizer.MANGA) {
+            val models = Injekt.get<ModelDownloader>()
+            if (!models.isPaddleDownloaded) models.downloadPaddleAndExtract().getOrThrow()
+        } else {
+            Injekt.get<PaddleModelDownloader>().ensure(paddleSelection)
         }
         val result = processImageWithChunks(bitmap, language) { chunk ->
             val chunkBytes = withContext(Dispatchers.Default) {
                 chunk.bitmap.toJpegBytes(85)
             }
-            val lines = paddleOcrBridge.recognize(chunkBytes, language)
-            if (chunk.bitmap !== bitmap) chunk.bitmap.recycle()
-            lines
+            try {
+                paddleOcrBridge.recognize(chunkBytes, language, paddleSelection)
+            } finally {
+                if (chunk.bitmap !== bitmap) chunk.bitmap.recycle()
+            }
         }
         if (result.isEmpty()) {
             logcat("OcrEngineSelector", LogPriority.WARN) { "paddle engine returned no results" }
