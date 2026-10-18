@@ -12,6 +12,7 @@ import chimahon.ocr.OcrLanguage
 import chimahon.ocr.PaddleDetector
 import chimahon.ocr.PaddleModelSelection
 import chimahon.ocr.PaddleRecognizer
+import chimahon.ocr.restorePaddleArabicText
 import chimahon.ocr.WritingDirection
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Semaphore
@@ -273,7 +274,7 @@ class PaddleOcrEngine(
                     // ignored. Ruby filtering lives solely in OwOCRMerger so all
                     // engines behave the same; filterFurigana stays off.
                     val isFurigana = (parts[6] == "1")
-                    val text = parts[7]
+                    val text = if (selection.recognizer == PaddleRecognizer.ARABIC) restorePaddleArabicText(parts[7]) else parts[7]
 
                     if (isFurigana) furiganaCount++
 

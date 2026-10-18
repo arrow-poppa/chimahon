@@ -441,9 +441,11 @@ class ReaderViewModel @JvmOverloads constructor(
 
     init {
         kotlinx.coroutines.flow.combine(dictionaryPreferences.ocrEngine().changes(), dictionaryPreferences.paddleDetector().changes()) { engine, detector -> engine to detector }
+            .drop(1)
             .onEach {
                 cancelOcrScan()
                 ocrScannedChapterIds.clear()
+                getSelectedReaderPage()?.let { scanOcrPages(it) }
             }
             .launchIn(viewModelScope)
 

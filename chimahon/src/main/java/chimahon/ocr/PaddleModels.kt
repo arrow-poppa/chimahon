@@ -43,3 +43,27 @@ data class PaddleModelSelection(
 /** Only catalogued directories may be installed or deleted. */
 val paddleComponentBundles: Set<String> = PaddleDetector.entries.map { it.bundle }.toSet() +
     PaddleRecognizer.entries.filter { it != PaddleRecognizer.MANGA }.map { it.bundle } + "paddle_runtime"
+
+/** Arabic CTC emits visual order; preserve Latin/number runs as PaddleOCR's pred_reverse does. */
+fun restorePaddleArabicText(text: String): String {
+    val groups = mutableListOf<String>()
+    val latin = StringBuilder()
+    fun flushLatin() {
+        if (latin.isNotEmpty()) {
+            groups += latin.toString()
+            latin.setLength(0)
+        }
+    }
+    for (codePoint in text.codePoints().toArray()) {
+        if (codePoint in 'a'.code..'z'.code || codePoint in 'A'.code..'Z'.code ||
+            codePoint in '0'.code..'9'.code || codePoint.toChar() in " :*./%+-"
+        ) {
+            latin.appendCodePoint(codePoint)
+        } else {
+            flushLatin()
+            groups += String(Character.toChars(codePoint))
+        }
+    }
+    flushLatin()
+    return groups.asReversed().joinToString("")
+}

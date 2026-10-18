@@ -7,6 +7,14 @@ import org.junit.jupiter.api.Test
 
 class PaddleModelsTest {
     @Test
+    fun `Arabic visual output is restored without reversing Latin or numeric runs`() {
+        assertEquals("مرحبا بالعالم", restorePaddleArabicText("ملاعلاب ابحرم"))
+        assertEquals("123مرحبا", restorePaddleArabicText("ابحرم123"))
+        assertEquals("Hello 123", restorePaddleArabicText("Hello 123"))
+        assertEquals("😀مرحبا", restorePaddleArabicText("ابحرم😀"))
+    }
+
+    @Test
     fun `manga preserves its preference and cache independently of generic detector`() {
         assertEquals("paddle", PaddleRecognizer.MANGA.preference)
         assertEquals("paddle", PaddleModelSelection(PaddleRecognizer.MANGA, PaddleDetector.SMALL).cacheVariant)
