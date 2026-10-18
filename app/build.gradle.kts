@@ -393,6 +393,8 @@ dependencies {
     androidTestImplementation(androidx.test.ext)
     androidTestImplementation(androidx.test.uiautomator)
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+    // Android test dependencies must agree with the tested debug APK's runtime graph.
+    debugImplementation("androidx.concurrent:concurrent-futures-ktx:1.2.0")
 
     testImplementation(libs.bundles.test)
     testImplementation(libs.json.jvm)

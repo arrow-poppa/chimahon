@@ -27,6 +27,10 @@ jobs:
           java-version-file: .github/.java-version
           distribution: temurin
       - uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92
+        with:
+          cache-read-only: false
+      - name: Resolve Android test dependencies
+        run: ./gradlew :app:checkDebugAndroidTestAarMetadata -PtargetAbis=x86_64 -PnativeSelectionTests=true --no-daemon
       - name: Compile app and native selection tests
         run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest -PtargetAbis=x86_64 -PnativeSelectionTests=true --no-daemon
       - name: Enable KVM
