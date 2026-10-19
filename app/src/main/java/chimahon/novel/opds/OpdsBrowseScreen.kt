@@ -10,8 +10,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material3.DropdownMenu
@@ -38,6 +38,7 @@ import chimahon.novel.manager.NovelSourceManager
 import chimahon.novel.ui.browse.BrowseNovelSourceContent
 import chimahon.novel.ui.browse.BrowseNovelSourceToolbar
 import chimahon.novel.ui.detail.NovelDetailScreen
+import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.sourcenovel.model.SNNovel
@@ -46,8 +47,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withPermit
-import tachiyomi.domain.library.model.LibraryDisplayMode
 import tachiyomi.presentation.core.components.material.Scaffold
+import tachiyomi.presentation.core.util.collectAsState
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
@@ -59,7 +60,8 @@ class OpdsBrowseScreen(private val catalogId: String? = null, private val feedUr
         val model = rememberScreenModel { OpdsBrowseModel(source, catalogId, feedUrl) }
         val state by model.state.collectAsState()
         var search by remember { mutableStateOf<String?>(null) }
-        var displayMode by remember { mutableStateOf<LibraryDisplayMode>(LibraryDisplayMode.default) }
+        val displayPreference = remember { Injekt.get<SourcePreferences>().sourceDisplayMode() }
+        val displayMode by displayPreference.collectAsState()
         var catalogsExpanded by remember { mutableStateOf(false) }
         LaunchedEffect(source) {
             source.store.catalogChanges.collect { model.refresh() }
@@ -68,10 +70,10 @@ class OpdsBrowseScreen(private val catalogId: String? = null, private val feedUr
         Scaffold(topBar = {
             BrowseNovelSourceToolbar(
                 searchQuery = search,
-                onSearchQueryChange = { search = it; if (it == null) model.refresh() },
+                onSearchQueryChange = { search = it; if (it == null) model.search("") },
                 source = source,
                 displayMode = displayMode,
-                onDisplayModeChange = { displayMode = it },
+                onDisplayModeChange = displayPreference::set,
                 navigateUp = navigator::pop,
                 onSearch = model::search,
                 onSettingsClick = { navigator.push(NovelSourcePreferencesScreen(OpdsSource.ID)) },
@@ -122,6 +124,7 @@ class OpdsBrowseScreen(private val catalogId: String? = null, private val feedUr
                             novels = state.books,
                             isLoading = state.loading,
                             hasNextPage = state.feed?.next != null,
+                            loadedPage = state.loadedPage,
                             error = state.error ?: if (state.catalog == null) stringResource(R.string.opds_empty) else null,
                             columns = GridCells.Adaptive(120.dp),
                             displayMode = displayMode,
@@ -129,7 +132,7 @@ class OpdsBrowseScreen(private val catalogId: String? = null, private val feedUr
                             onNovelClick = { navigator.push(NovelDetailScreen(it, source.id)) },
                             onLoadMore = model::loadMore,
                             onRequestCover = model::requestCover,
-                            onRetryClick = model::refresh,
+                            onRetryClick = model::retry,
                         )
                     }
                 } else if (state.feed?.next != null) {
@@ -178,6 +181,10 @@ private class OpdsBrowseModel(
         load(catalog, state.feed?.next ?: return, append = true)
     }
 
+    fun retry() {
+        if (state.value.feed?.next != null) loadMore() else refresh()
+    }
+
     private fun load(catalog: OpdsCatalog, url: String, append: Boolean, searchQuery: String? = null) {
         job?.cancel()
         if (!append) requestedCovers.clear()
@@ -192,6 +199,7 @@ private class OpdsBrowseModel(
                     catalog = catalog,
                     feed = feed.copy(navigation = navigation),
                     books = (previous + feed.books.map(source::novel)).distinctBy { it.url },
+                    loadedPage = if (append) state.value.loadedPage + 1 else 1,
                 )
             } catch (error: CancellationException) {
                 throw error
@@ -221,6 +229,7 @@ private class OpdsBrowseModel(
         val feed: OpdsFeed? = null,
         val books: List<SNNovel> = emptyList(),
         val loading: Boolean = false,
+        val loadedPage: Int = 0,
         val error: String? = null,
     )
 }

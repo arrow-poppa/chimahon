@@ -14,6 +14,7 @@ import android.graphics.Color
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
+import android.graphics.RectF
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -96,6 +97,7 @@ import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.presentation.reader.ChapterListDialog
 import eu.kanade.presentation.reader.DisplayRefreshHost
 import eu.kanade.presentation.reader.OrientationSelectDialog
+import eu.kanade.presentation.reader.OcrRegionSelector
 import eu.kanade.presentation.reader.ReaderContentOverlay
 import eu.kanade.presentation.reader.ReaderPageActionsDialog
 import eu.kanade.presentation.reader.ReaderPageIndicator
@@ -164,6 +166,8 @@ import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.collections.immutable.toImmutableSet
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -250,6 +254,9 @@ class ReaderActivity : BaseActivity() {
     private var ocrPopupState by mutableStateOf<OcrPopupState?>(null)
     private var ocrPopupVisible by mutableStateOf(false)
     private var ocrSelectionPanelState by mutableStateOf<OcrSelectionPanelState?>(null)
+    private var ocrRegionSelecting by mutableStateOf(false)
+    private var ocrRegionScanning by mutableStateOf(false)
+    private var ocrRegionJob: Job? = null
 
     private val twoFingerTapSlop by lazy { ViewConfiguration.get(this).scaledTouchSlop }
     private var twoFingerTapTracking = false
@@ -499,6 +506,9 @@ class ReaderActivity : BaseActivity() {
             val context = LocalContext.current
             // KMK <--
             val state by viewModel.state.collectAsState()
+            LaunchedEffect(state.viewer, state.currentChapter, state.currentPage) {
+                cancelOcrRegion()
+            }
             val showPageNumber by readerPreferences.showPageNumber().collectAsState()
             val settingsScreenModel = remember {
                 ReaderSettingsScreenModel(
@@ -534,6 +544,13 @@ class ReaderActivity : BaseActivity() {
                     OcrSelectionPanel(
                         state = selectionState,
                         onDismiss = ::dismissOcrSelectionPanel,
+                    )
+                }
+                if (ocrRegionSelecting) {
+                    OcrRegionSelector(
+                        scanning = ocrRegionScanning,
+                        onCancel = ::cancelOcrRegion,
+                        onSelected = ::rescanOcrRegion,
                     )
                 }
             }
@@ -644,6 +661,7 @@ class ReaderActivity : BaseActivity() {
                             }
                         },
                         hasExtraPage = (state.dialog as? ReaderViewModel.Dialog.PageActions)?.extraPage != null,
+                        onCropReOcr = ::startOcrRegionSelection.takeIf { viewModel.isOcrAllowedForCurrentManga() },
                     )
                 }
 
@@ -1152,13 +1170,20 @@ class ReaderActivity : BaseActivity() {
     }
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-        if (readerPreferences.ocrTwoFingerGestureEnabled().get()) {
+        if (!ocrRegionSelecting &&
+            (readerPreferences.ocrTwoFingerGestureEnabled().get() || readerPreferences.ocrTwoFingerRegionEnabled().get()) &&
             observeTwoFingerOcrTap(ev)
+        ) {
+            val cancel = MotionEvent.obtain(ev)
+            cancel.action = MotionEvent.ACTION_CANCEL
+            super.dispatchTouchEvent(cancel)
+            cancel.recycle()
+            return true
         }
         return super.dispatchTouchEvent(ev)
     }
 
-    private fun observeTwoFingerOcrTap(event: MotionEvent) {
+    private fun observeTwoFingerOcrTap(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 twoFingerTapTracking = false
@@ -1186,7 +1211,13 @@ class ReaderActivity : BaseActivity() {
                     event.eventTime - twoFingerTapStartTime <= ViewConfiguration.getDoubleTapTimeout().toLong() &&
                     event.isTwoFingerTapCandidate()
                 ) {
-                    toggleOcrFromReader()
+                    twoFingerTapTracking = false
+                    if (readerPreferences.ocrTwoFingerRegionEnabled().get()) {
+                        startOcrRegionSelection()
+                    } else {
+                        toggleOcrFromReader()
+                    }
+                    return true
                 }
                 twoFingerTapTracking = false
             }
@@ -1194,6 +1225,59 @@ class ReaderActivity : BaseActivity() {
             MotionEvent.ACTION_CANCEL,
             -> {
                 twoFingerTapTracking = false
+            }
+        }
+        return false
+    }
+
+    private fun startOcrRegionSelection() {
+        if (!viewModel.isOcrAllowedForCurrentManga()) return
+        ocrPopupVisible = false
+        dismissOcrSelectionPanel()
+        hideMenu()
+        ocrRegionSelecting = true
+    }
+
+    private fun cancelOcrRegion() {
+        ocrRegionJob?.cancel()
+        ocrRegionJob = null
+        ocrRegionSelecting = false
+        ocrRegionScanning = false
+    }
+
+    private fun rescanOcrRegion(selection: RectF) {
+        if (ocrRegionScanning) return
+        val location = IntArray(2)
+        binding.composeOverlay.getLocationOnScreen(location)
+        val screenRegion = RectF(selection).apply { offset(location[0].toFloat(), location[1].toFloat()) }
+        val viewer = viewModel.state.value.viewer
+        val regions = when (viewer) {
+            is PagerViewer -> viewer.ocrRegions(screenRegion)
+            is WebtoonViewer -> viewer.ocrRegions(screenRegion)
+            else -> emptyList()
+        }
+        if (regions.isEmpty()) {
+            toast(MR.strings.ocr_region_unavailable)
+            return
+        }
+        ocrRegionScanning = true
+        ocrRegionJob = lifecycleScope.launch {
+            try {
+                viewModel.rescanOcrRegions(regions)
+                if (viewModel.state.value.viewer === viewer) {
+                    when (viewer) {
+                        is PagerViewer -> viewer.refreshOcr()
+                        is WebtoonViewer -> viewer.refreshOcr()
+                    }
+                }
+                ocrRegionSelecting = false
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logcat(LogPriority.ERROR, e) { "Region OCR failed" }
+                toast(MR.strings.ocr_region_failed)
+            } finally {
+                if (ocrRegionJob === coroutineContext[Job]) ocrRegionScanning = false
             }
         }
     }
@@ -1303,6 +1387,7 @@ class ReaderActivity : BaseActivity() {
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
+        if (ocrRegionSelecting) return super.onKeyUp(keyCode, event)
         if (keyCode == KeyEvent.KEYCODE_N) {
             loadNextChapter()
             return true
@@ -1317,7 +1402,7 @@ class ReaderActivity : BaseActivity() {
      * Dispatches a key event. If the viewer doesn't handle it, call the default implementation.
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (ocrSelectionPanelState != null) {
+        if (ocrSelectionPanelState != null || ocrRegionSelecting) {
             return super.dispatchKeyEvent(event)
         }
 
@@ -1350,7 +1435,7 @@ class ReaderActivity : BaseActivity() {
      * implementation.
      */
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
-        if (ocrSelectionPanelState != null) {
+        if (ocrSelectionPanelState != null || ocrRegionSelecting) {
             return super.dispatchGenericMotionEvent(event)
         }
 
@@ -1468,7 +1553,6 @@ class ReaderActivity : BaseActivity() {
         }
         val readerBottomButtons by readerPreferences.readerBottomButtons().changes().map { it.toImmutableSet() }
             .collectAsState(persistentSetOf())
-        val dualPageSplitPaged by readerPreferences.dualPageSplitPaged().collectAsState()
 
         val forceHorizontalSeekbar by readerPreferences.forceHorizontalSeekbar().collectAsState()
         val landscapeVerticalSeekbar by readerPreferences.landscapeVerticalSeekbar().collectAsState()
@@ -1494,7 +1578,7 @@ class ReaderActivity : BaseActivity() {
         val enginePreference by dictionaryPreferences.ocrEngine().collectAsState()
         val detector = PaddleDetector.fromPreference(detectorPreference)
             .takeIf { BuildConfig.HAS_LOCAL_OCR && state.ocrSource.usesGenericPaddleDetector(OcrEngineType.fromPreference(enginePreference)) }
-        val ocrEnabled = ocrOverlayEnabled && viewModel.isOcrAllowedForCurrentManga()
+        val ocrEnabled = (ocrOverlayEnabled || state.regionOcrEnabled) && viewModel.isOcrAllowedForCurrentManga()
 
         ReaderAppBars(
             visible = state.menuVisible,
@@ -1564,20 +1648,8 @@ class ReaderActivity : BaseActivity() {
             currentReadingMode = ReadingMode.fromPreference(
                 viewModel.getMangaReadingMode(resolveDefault = true),
             ),
-            dualPageSplitEnabled = dualPageSplitPaged,
-            doublePages = state.doublePages,
             onClickChapterList = viewModel::openChapterListDialog,
-            onClickPageLayout = {
-                if (readerPreferences.pageLayout().get() == PagerConfig.PageLayout.AUTOMATIC) {
-                    (viewModel.state.value.viewer as? PagerViewer)?.config?.let { config ->
-                        config.doublePages = !config.doublePages
-                        reloadChapters(config.doublePages, true)
-                    }
-                } else {
-                    readerPreferences.pageLayout().set(1 - readerPreferences.pageLayout().get())
-                }
-            },
-            onClickShiftPage = ::shiftDoublePages,
+            onCropReOcr = ::startOcrRegionSelection.takeIf { viewModel.isOcrAllowedForCurrentManga() },
             // SY <--
         )
     }
@@ -1734,25 +1806,6 @@ class ReaderActivity : BaseActivity() {
         viewModel.setDoublePages(viewer.config.doublePages)
     }
 
-    private fun shiftDoublePages() {
-        val viewer = viewModel.state.value.viewer as? PagerViewer ?: return
-        viewer.config.let { config ->
-            config.shiftDoublePage = !config.shiftDoublePage
-
-            viewModel.manga?.id?.let { mangaId ->
-                getSharedPreferences("reader_prefs", MODE_PRIVATE)
-                    .edit()
-                    .putBoolean("shift_doublepage$mangaId", config.shiftDoublePage)
-                    .apply()
-            }
-
-            viewModel.state.value.viewerChapters?.let {
-                viewer.updateShifting()
-                viewer.setChaptersInternal(it)
-                invalidateOptionsMenu()
-            }
-        }
-    }
     // EXH <--
 
     /**
