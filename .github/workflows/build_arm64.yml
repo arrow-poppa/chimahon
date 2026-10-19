@@ -9,6 +9,7 @@ on:
       - agent/byok-ai-v2.4.1
       - agent/byok-ai-v2.4.7
       - agent/byok-ai-v2.4.7-ocr-models
+      - agent/byok-ai-v2.4.8-ocr-models
   workflow_dispatch:
 
 permissions:
@@ -93,6 +94,7 @@ jobs:
           --tests "eu.kanade.tachiyomi.ui.reader.setting.ReaderOcrSourceTest"
           --tests "eu.kanade.tachiyomi.ui.dictionary.DictionaryResultOrderingTest"
           --tests "eu.kanade.tachiyomi.ui.dictionary.AiExplanationContentTest"
+          --tests "eu.kanade.tachiyomi.ui.dictionary.ScreenLookupOcrTest"
           --tests "eu.kanade.tachiyomi.ui.player.controls.NativeSubtitleGeometryTest"
           --no-daemon
 

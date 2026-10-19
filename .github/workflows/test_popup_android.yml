@@ -2,7 +2,7 @@ name: Android popup selection
 
 on:
   push:
-    branches: [agent/byok-ai-v2.4.7-ocr-models]
+    branches: [agent/byok-ai-v2.4.7-ocr-models, agent/byok-ai-v2.4.8-ocr-models]
   workflow_dispatch:
 
 permissions:
@@ -39,7 +39,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Test native long press on Android 13
-        uses: reactivecircus/android-emulator-runner@ed009f5318f15b1cf93a191b856c4f1748a2d4c1
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: 33
           arch: x86_64
