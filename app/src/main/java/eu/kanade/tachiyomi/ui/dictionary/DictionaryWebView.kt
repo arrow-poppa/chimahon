@@ -65,6 +65,8 @@ internal fun prepareDictionaryWebViewShell(
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 val s = view?.tag as? DictionaryWebViewState ?: return
+                // A previous shell can finish after a newer loadDataWithBaseURL request.
+                if (url != s.shellUrl || s.pageReady) return
                 s.pageReady = true
                 view.setTag(R.id.chima_webview_warm, true)
                 val enableRecursive = s.onRecursiveLookup != null
@@ -138,6 +140,9 @@ internal class DictionaryWebViewState(
     val payloadBridge: PayloadBridge = PayloadBridge()
     val ankiJsBridge: AnkiJsBridge = AnkiJsBridge(webViewProvider)
     var pageReady: Boolean = false
+    private var shellGeneration: Long = 0
+    var shellUrl: String = ""
+        private set
     var fontSize: Int = 16
     @Volatile var contentReadyGeneration: Long = 0
     @Volatile var nextContentReadyRequestId: Long = 0
@@ -233,8 +238,9 @@ internal class DictionaryWebViewState(
         nextContentReadyRequestId++
         clearPendingPayload()
         onContentInvalidated?.invoke()
+        shellUrl = "https://chima.local/popup/?shell=${++shellGeneration}"
         webView.loadDataWithBaseURL(
-            "https://chima.local/popup/",
+            shellUrl,
             html,
             "text/html",
             "UTF-8",

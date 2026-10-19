@@ -87,6 +87,13 @@ class DictionaryNativeSelectionTest {
     }
 
     @Test
+    fun outdatedShellCallbackDoesNotDropPopupContentOrNativeSelection() {
+        mountPopup(windowPopup = false, simulateOutdatedShell = true)
+        selectWord()
+        assertNativeSelectionAndCopy()
+    }
+
+    @Test
     fun recursiveWindowPopupLongPressOpensNativeCopyAndPreservesPopup() {
         mountPopup(windowPopup = true)
         selectWord()
@@ -181,7 +188,7 @@ class DictionaryNativeSelectionTest {
         }
     }
 
-    private fun mountPopup(windowPopup: Boolean, overlay: Boolean = false) {
+    private fun mountPopup(windowPopup: Boolean, overlay: Boolean = false, simulateOutdatedShell: Boolean = false) {
         compose.runOnUiThread {
             val preferences = Injekt.get<DictionaryPreferences>()
             preferences.popupSwipeToDismiss().set(true)
@@ -194,6 +201,16 @@ class DictionaryNativeSelectionTest {
             } else {
                 DictionaryPopupWebViewWarmup.warm(compose.activity)
                 webView = DictionaryPopupWebViewWarmup.acquire(compose.activity)
+            }
+            if (simulateOutdatedShell) {
+                val state = webView.tag as DictionaryWebViewState
+                val previousUrl = state.shellUrl
+                state.reloadShell(webView, state.bootstrapHtml)
+                state.pendingPayload = "pending-current-content"
+                webView.webViewClient.onPageFinished(webView, previousUrl)
+                assertFalse("An outdated shell cannot mark the current document ready", state.pageReady)
+                assertEquals("pending-current-content", state.pendingPayload)
+                state.pendingPayload = null
             }
         }
         var visible by mutableStateOf(true)
