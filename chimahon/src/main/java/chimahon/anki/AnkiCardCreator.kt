@@ -101,6 +101,7 @@ object Marker {
     const val MISC_INFO = "misc-info"
     const val POPUP_SELECTION_TEXT = "popup-selection-text"
     const val PLAIN_SELECTED_TEXT = "plain-selected-text"
+    const val AI_EXPLANATION = "ai-explanation"
     const val SELECTED_GLOSSARY = "selected-glossary"
     const val SELECTED_GLOSSARY_NO_FALLBACK = "selected-glossary-no-fallback"
     const val MEDIA_NAME = "media-name"
@@ -117,7 +118,7 @@ object Marker {
 
         // Glossary variants
         GLOSSARY_BRIEF, GLOSSARY_PLAIN, GLOSSARY_PLAIN_NO_DICT, GLOSSARY_NO_DICT,
-        GLOSSARY_FIRST, GLOSSARY_FIRST_NO_DICT, GLOSSARY_FIRST_BRIEF,
+        GLOSSARY_FIRST, GLOSSARY_FIRST_NO_DICT, GLOSSARY_FIRST_BRIEF, AI_EXPLANATION,
 
         // Sentence/Cloze
         SENTENCE_BOLD, CLOZE_PREFIX, CLOZE_BODY, CLOZE_BODY_KANA, CLOZE_SUFFIX,
@@ -149,6 +150,7 @@ object Marker {
         READING to listOf("reading", "expression-reading", "term-reading", "word-reading"),
         FURIGANA to listOf("furigana", "expression-furigana", "term-furigana", "word-furigana"),
         GLOSSARY to listOf("glossary", "definition", "meaning"),
+        AI_EXPLANATION to listOf("ai-explanation", "aiexplanation", "ai explanation", "ai_explanation"),
         WORD_AUDIO to listOf("audio", "sound", "word-audio", "term-audio", "expression-audio", "wordaudio"),
         DICTIONARY to listOf("dictionary", "dict"),
         PITCH_ACCENTS to listOf("pitch-accents", "pitch", "pitch-accent", "pitchaccent", "pitchaccents", "accent", "pitch-pattern"),
@@ -291,6 +293,7 @@ object AnkiCardCreator {
         profileId: String = "",
         titleId: String? = null,
         mediaRequest: AnkiMediaRequest? = null,
+        aiExplanation: String? = null,
     ): AnkiResult {
         android.util.Log.d(TAG, "addToAnki: deck=$deck, model=$model, forceOpen=$forceOpen, glossaryIndex=$glossaryIndex")
 
@@ -388,6 +391,7 @@ object AnkiCardCreator {
                     glossaryIndex,
                     styles,
                     exportMedia,
+                    aiExplanation,
                 )
             }
             val tagsWithPlaceholders = withContext(Dispatchers.Default) {
@@ -406,7 +410,7 @@ object AnkiCardCreator {
                             selectedDict,
                             popupSelection,
                             glossaryIndex,
-                            styles, exportMedia,
+                            styles, exportMedia, aiExplanation,
                         )
                     }
             }
@@ -605,8 +609,9 @@ object AnkiCardCreator {
         glossaryIndex: Int? = null,
         styles: List<DictionaryStyle> = emptyList(),
         exportMedia: ExportMediaContext? = null,
+        aiExplanation: String? = null,
     ): Map<String, String> = fieldMap.mapValues { (_, template) ->
-        formatField(template, result, cloze, media, screenshotFilename, wordAudioFilename, sentenceAudioFilename, selectedDict, popupSelection, glossaryIndex, styles, exportMedia)
+        formatField(template, result, cloze, media, screenshotFilename, wordAudioFilename, sentenceAudioFilename, selectedDict, popupSelection, glossaryIndex, styles, exportMedia, aiExplanation)
     }
 
     private fun formatField(
@@ -622,6 +627,7 @@ object AnkiCardCreator {
         glossaryIndex: Int?,
         styles: List<DictionaryStyle>,
         exportMedia: ExportMediaContext?,
+        aiExplanation: String?,
     ): String {
         if (template.isBlank()) return ""
         return MARKER_PATTERN.replace(template) { match ->
@@ -638,6 +644,7 @@ object AnkiCardCreator {
                 glossaryIndex = glossaryIndex,
                 styles = styles,
                 exportMedia = exportMedia,
+                aiExplanation = aiExplanation,
             )
         }
     }
@@ -808,6 +815,7 @@ object AnkiCardCreator {
         glossaryIndex: Int? = null,
         styles: List<DictionaryStyle> = emptyList(),
         exportMedia: ExportMediaContext? = null,
+        aiExplanation: String? = null,
     ): String = when (marker) {
         Marker.EXPRESSION -> escapeHtml(result.term.expression)
         Marker.READING -> escapeHtml(result.term.reading)
@@ -927,6 +935,7 @@ object AnkiCardCreator {
                 ""
             }
         }
+        Marker.AI_EXPLANATION -> aiExplanation?.let(::escapeHtmlWithLineBreaks).orEmpty()
         Marker.POPUP_SELECTION_TEXT, Marker.PLAIN_SELECTED_TEXT ->
             popupSelection?.let { escapeHtmlWithLineBreaks(it) } ?: ""
         Marker.SELECTED_GLOSSARY -> {

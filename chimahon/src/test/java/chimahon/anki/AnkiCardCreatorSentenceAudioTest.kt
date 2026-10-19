@@ -168,11 +168,44 @@ class AnkiCardCreatorSentenceAudioTest {
         )
     }
 
+    @Test
+    fun `AI marker exports the complete explanation independently of popup selection`() = runTest {
+        val bridge = FakeBridge(listOf(emptyList()))
+        AnkiCardCreator.bridgeFactory = { bridge }
+        AnkiCardCreator.fieldMapParser = {
+            mapOf("AI" to "{ai-explanation}", "Selection" to "{popup-selection-text}", "Plain" to "{plain-selected-text}")
+        }
+
+        assertEquals(AnkiResult.Success(7), addCard(aiExplanation = "Full <AI> & explanation\nAnother line", popupSelection = "selected word"))
+        assertEquals(
+            mapOf("AI" to "Full &lt;AI&gt; &amp; explanation<br>Another line", "Selection" to "selected word", "Plain" to "selected word"),
+            bridge.addedFields.single(),
+        )
+    }
+
+    @Test
+    fun `missing AI explanation exports an empty field without using selected text`() = runTest {
+        val bridge = FakeBridge(listOf(emptyList()))
+        AnkiCardCreator.bridgeFactory = { bridge }
+        AnkiCardCreator.fieldMapParser = { mapOf("AI" to "{ai-explanation}") }
+
+        assertEquals(AnkiResult.Success(7), addCard(popupSelection = "not an explanation"))
+        assertEquals(mapOf("AI" to ""), bridge.addedFields.single())
+    }
+
+    @Test
+    fun `AI explanation fields can be detected without changing existing selection markers`() {
+        assertEquals(Marker.AI_EXPLANATION, Marker.autoDetect("AI Explanation", 1))
+        assertEquals(Marker.POPUP_SELECTION_TEXT, Marker.autoDetect("PopupSelectionText", 1))
+    }
+
     private suspend fun addCard(
         screenshotBytes: ByteArray? = null,
         sentenceAudioBytes: ByteArray? = null,
         dupCheck: Boolean = false,
         dupAction: String = "prevent",
+        aiExplanation: String? = null,
+        popupSelection: String? = null,
     ): AnkiResult = AnkiCardCreator.addToAnki(
         context = TestContext,
         result = lookupResult(),
@@ -185,6 +218,8 @@ class AnkiCardCreatorSentenceAudioTest {
         dupAction = dupAction,
         screenshotBytes = screenshotBytes,
         sentenceAudioBytes = sentenceAudioBytes,
+        aiExplanation = aiExplanation,
+        popupSelection = popupSelection,
     )
 
     private fun lookupResult(): LookupResult = LookupResult(

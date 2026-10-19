@@ -573,6 +573,7 @@ fun OcrLookupPopup(
     ) {
         val sourceResult = results.getOrNull(index) ?: return
         val miningFrame = currentFrame
+        val miningAiExplanation = miningFrame?.aiExplanation.orEmpty()
         val effectivePopupSelection = popupSelection
             ?.takeIf { it.isNotBlank() }
             ?: miningFrame?.aiExplanation?.takeIf { it.isNotBlank() }
@@ -649,6 +650,7 @@ fun OcrLookupPopup(
                     selection = result.matched,
                     selectedDict = selectedDict,
                     popupSelection = effectivePopupSelection,
+                    aiExplanation = miningAiExplanation,
                     styles = styles,
                     forceOpen = forceOpen,
                     type = type,
@@ -729,6 +731,7 @@ fun OcrLookupPopup(
                     selection = result.matched,
                     selectedDict = selectedDict,
                     popupSelection = effectivePopupSelection,
+                    aiExplanation = miningAiExplanation,
                     styles = styles,
                     forceOpen = forceOpen,
                     type = type,
