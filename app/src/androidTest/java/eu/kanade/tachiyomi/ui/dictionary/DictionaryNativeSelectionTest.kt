@@ -242,6 +242,8 @@ class DictionaryNativeSelectionTest {
         } else {
             compose.setContent(content)
         }
+        // Dialog roots also use the Compose test clock; advance it before polling WebView.
+        compose.waitForIdle()
         val deadline = SystemClock.uptimeMillis() + 15_000
         while (SystemClock.uptimeMillis() < deadline) {
             if (js("!!document.querySelector('.gloss-content')") == true) {
@@ -270,11 +272,16 @@ class DictionaryNativeSelectionTest {
         val selected = selection().trim()
         assertEquals("Selectable", selected)
         device.findObject(By.text("Copy")).click()
-        SystemClock.sleep(200)
-        compose.runOnUiThread {
-            val clipboard = compose.activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            assertEquals(selected, clipboard.primaryClip?.getItemAt(0)?.coerceToText(compose.activity)?.toString())
+        var copied: String? = null
+        val deadline = SystemClock.uptimeMillis() + 5_000
+        while (SystemClock.uptimeMillis() < deadline && copied != selected) {
+            compose.runOnUiThread {
+                val clipboard = compose.activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                copied = clipboard.primaryClip?.getItemAt(0)?.coerceToText(compose.activity)?.toString()
+            }
+            if (copied != selected) SystemClock.sleep(100)
         }
+        assertEquals(selected, copied)
         assertFalse("Copy dismissed the dictionary", dismissed)
     }
 
