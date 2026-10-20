@@ -101,10 +101,15 @@ jobs:
       - name: Verify published OCR model catalog
         run: |
           python3 - <<'PYTHON'
-          import json, urllib.request
-          manifest = json.load(urllib.request.urlopen('https://github.com/arrow-poppa/chimahon/releases/download/lookitan-ocr-v1/manifest.json'))
+          import json, re, urllib.request
+          from pathlib import Path
+          catalog = Path('chimahon/src/main/java/chimahon/ocr/PaddleModels.kt').read_text()
+          def constant(name):
+              return re.search(rf'const val {name} = "([^"\n]+)"', catalog)[1]
+          tag = constant('PADDLE_MODELS_RELEASE_TAG')
+          manifest = json.load(urllib.request.urlopen(f'https://github.com/arrow-poppa/chimahon/releases/download/{tag}/manifest.json'))
           sources = json.load(open('tools/ocr-models/models.json'))
-          assert manifest['version'] == 'lookitan-ocr-v1'
+          assert manifest['version'] == constant('PADDLE_MODELS_VERSION')
           assert set(manifest['components']) == {'paddle_' + name for name in sources} | {'paddle_runtime'}
           PYTHON
 

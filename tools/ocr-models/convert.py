@@ -1,4 +1,4 @@
-"""Reproducible Lookitan ONNX -> Chimahon NCNN FP16 component bundles.
+"""Reproducible ONNX -> Chimahon NCNN FP16 component bundles.
 
 Adapted from Chimahon/chimahon-local-models tools/convert_paddle_ocr.py.
 Requires pnnx 20260526 and ncnnoptimize 20260526. Never publishes releases.

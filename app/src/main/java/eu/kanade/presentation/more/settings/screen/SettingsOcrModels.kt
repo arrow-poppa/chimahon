@@ -15,7 +15,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
-import chimahon.ocr.PADDLE_MODELS_VERSION
+import chimahon.ocr.PADDLE_MODELS_RELEASE_TAG
 import chimahon.ocr.PaddleDetector
 import chimahon.ocr.PaddleRecognizer
 import eu.kanade.presentation.more.settings.Preference
@@ -69,7 +69,7 @@ internal fun getOcrModelsGroup(): Preference.PreferenceGroup {
         while (true) {
             statuses = withIOContext {
                 val installed = listOf(ocr.isDownloaded, ocr.isPaddleDownloaded, panel.isDownloaded) + components.map { paddle.installed(it.first) }
-                val versions = listOf(ocr.lensVersionInstalled, ocr.paddleVersionInstalled, null) + components.map { PADDLE_MODELS_VERSION }
+                val versions = listOf(ocr.lensVersionInstalled, ocr.paddleVersionInstalled, null) + components.map { PADDLE_MODELS_RELEASE_TAG }
                 (listOf("screenai_models", "paddle_ocr", "panel_detector") + components.map { it.first }).mapIndexed { index, directory ->
                     val bytes = File(context.filesDir, directory).walkTopDown().filter { it.isFile }.sumOf { it.length() }
                     OcrModelStatus(installed[index], bytes, versions[index])

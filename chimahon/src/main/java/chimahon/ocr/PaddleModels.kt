@@ -1,7 +1,8 @@
 package chimahon.ocr
 
-/** Immutable model release: changing weights requires a new version and cache namespace. */
+/** Content version stays unchanged when hosting moves, preserving installed models and caches. */
 const val PADDLE_MODELS_VERSION = "lookitan-ocr-v1"
+const val PADDLE_MODELS_RELEASE_TAG = "ocr-models-v1"
 
 enum class PaddleRecognizer(val id: String, val label: String) {
     MANGA("manga", "PaddleOCR v6 — Manga"),

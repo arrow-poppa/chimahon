@@ -1,4 +1,4 @@
-# Lookitan OCR models for Chimahon
+# OCR models for Chimahon
 
 The settings and reader source menu select recognition models manually. The
 OCR detector selector in settings and the reader menu selects PP-OCRv6 Tiny (default)
@@ -6,8 +6,8 @@ or Small for all new recognizers, including Automatic mode when its engine uses 
 Both run on CPU. The existing Manga option keeps its own detector and thresholds.
 The dictionary profile still determines language and reading rules.
 
-`models.json` pins all eight ONNX models to the same Hugging Face revisions used by
-Lookitan's `tests` branch: two detectors and six recognizers. Conversion adapts
+`models.json` pins all eight ONNX models to immutable Hugging Face revisions:
+two detectors and six recognizers. Conversion adapts
 Chimahon's existing pnnx / ncnnoptimize pipeline, including dynamic dimensions,
 `input` / `output` blob names and removal of the recognition Softmax for JNI CTC
 logits. Each recognizer has its own matching UTF-8 character dictionary.
@@ -18,9 +18,11 @@ can be reused. No ONNX runtime is added to the Android application.
 
 The `Build OCR models` workflow installs pinned conversion tools, converts all
 models, compares their outputs and decoded text to the ONNX originals, and creates
-an immutable `lookitan-ocr-v1` release on the fork. SHA-256 hashes cover each archive
-and all extracted files. To change weights, bump the release version in both Python
-and `PaddleModels.kt`; never replace the assets of an existing model release.
+an immutable `ocr-models-v1` release on the fork. SHA-256 hashes cover each archive
+and all extracted files. The public release tag is separate from the content
+version so moving hosting preserves installed components and cached results.
+To change weights, bump the content version in Python and `PaddleModels.kt` and
+use a new release tag; never replace the assets of an existing model release.
 
 Local reproduction (use a virtualenv):
 

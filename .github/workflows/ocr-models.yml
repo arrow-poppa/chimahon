@@ -35,17 +35,17 @@ jobs:
         run: python tools/ocr-models/validate.py --work model-build --font /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc --arabic-font /usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: lookitan-ocr-v1
+          name: ocr-models-v1
           path: model-build/dist/*
       - name: Publish immutable model release on the fork
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           test "$GITHUB_REPOSITORY" = arrow-poppa/chimahon
-          if gh release view lookitan-ocr-v1 >/dev/null 2>&1; then
-            gh release download lookitan-ocr-v1 --pattern manifest.json --dir existing-model-release
+          if gh release view ocr-models-v1 >/dev/null 2>&1; then
+            gh release download ocr-models-v1 --pattern manifest.json --dir existing-model-release
             python -c 'import json; assert json.load(open("existing-model-release/manifest.json")) == json.load(open("model-build/dist/manifest.json")), "Published model weights differ: bump the immutable model version"'
             echo 'Existing immutable release matches all rebuilt components.'
             exit 0
           fi
-          gh release create lookitan-ocr-v1 model-build/dist/* --target "$GITHUB_SHA" --title 'Lookitan OCR models v1 (CPU)' --notes 'Pinned PaddleOCR models converted to NCNN FP16. Includes numerical and CTC comparisons against ONNX on desktop CPU. Android inference/accuracy is not established by these checks.' --latest=false
+          gh release create ocr-models-v1 model-build/dist/* --target "$GITHUB_SHA" --title 'Chimahon OCR Models v1 (CPU)' --notes 'Pinned PaddleOCR models converted to NCNN FP16. Includes numerical and CTC comparisons against ONNX on desktop CPU. Android inference/accuracy is not established by these checks.' --latest=false

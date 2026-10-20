@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.data.ocr
 
 import android.content.Context
 import android.os.Build
+import chimahon.ocr.PADDLE_MODELS_RELEASE_TAG
 import chimahon.ocr.PADDLE_MODELS_VERSION
 import chimahon.ocr.PaddleModelSelection
 import chimahon.ocr.paddleComponentBundles
@@ -33,7 +34,7 @@ class PaddleModelDownloader(private val context: Context, private val client: Ok
     private val mutex = Mutex()
     private val mutableStatus = MutableStateFlow<Map<String, String>>(emptyMap())
     val status = mutableStatus.asStateFlow()
-    private val releaseUrl = "https://github.com/arrow-poppa/chimahon/releases/download/$PADDLE_MODELS_VERSION"
+    private val releaseUrl = "https://github.com/arrow-poppa/chimahon/releases/download/$PADDLE_MODELS_RELEASE_TAG"
 
     fun required(bundle: String): List<String> {
         require(bundle in paddleComponentBundles)
