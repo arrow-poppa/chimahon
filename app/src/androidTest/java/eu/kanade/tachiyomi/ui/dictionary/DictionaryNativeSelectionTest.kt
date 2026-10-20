@@ -204,10 +204,10 @@ class DictionaryNativeSelectionTest {
             }
             if (simulateOutdatedShell) {
                 val state = webView.tag as DictionaryWebViewState
-                val previousUrl = state.shellUrl
+                val previousGeneration = state.shellGeneration
                 state.reloadShell(webView, state.bootstrapHtml)
                 state.pendingPayload = "pending-current-content"
-                webView.webViewClient.onPageFinished(webView, previousUrl)
+                state.markShellReady(webView, previousGeneration)
                 assertFalse("An outdated shell cannot mark the current document ready", state.pageReady)
                 assertEquals("pending-current-content", state.pendingPayload)
                 state.pendingPayload = null

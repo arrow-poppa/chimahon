@@ -26,6 +26,12 @@ internal class DictionaryReadyBridge(
     private val stateProvider: () -> DictionaryWebViewState?,
 ) {
     @JavascriptInterface
+    fun shellReady(generation: Long) {
+        val webView = webViewProvider() ?: return
+        webView.post { stateProvider()?.markShellReady(webView, generation) }
+    }
+
+    @JavascriptInterface
     fun contentReady() {
         val webView = webViewProvider() ?: return
         val state = stateProvider() ?: return

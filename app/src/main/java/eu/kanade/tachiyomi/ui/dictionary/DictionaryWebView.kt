@@ -62,21 +62,6 @@ internal fun prepareDictionaryWebViewShell(
 
 
         webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView?, url: String?) {
-                super.onPageFinished(view, url)
-                val s = view?.tag as? DictionaryWebViewState ?: return
-                // A previous shell can finish after a newer loadDataWithBaseURL request.
-                if (url != s.shellUrl || s.pageReady) return
-                s.pageReady = true
-                view.setTag(R.id.chima_webview_warm, true)
-                val enableRecursive = s.onRecursiveLookup != null
-                view.evaluateJavascript("window.DictionaryRenderer && window.DictionaryRenderer.setRecursiveLookupEnabled($enableRecursive);", null)
-                s.injectFontSize(view)
-                s.injectCustomCss(view)
-                s.flush(view)
-                s.injectAiExplanation(view)
-            }
-
             override fun shouldOverrideUrlLoading(
                 view: WebView?,
                 request: WebResourceRequest?,
@@ -140,8 +125,7 @@ internal class DictionaryWebViewState(
     val payloadBridge: PayloadBridge = PayloadBridge()
     val ankiJsBridge: AnkiJsBridge = AnkiJsBridge(webViewProvider)
     var pageReady: Boolean = false
-    private var shellGeneration: Long = 0
-    var shellUrl: String = ""
+    var shellGeneration: Long = 0
         private set
     var fontSize: Int = 16
     @Volatile var contentReadyGeneration: Long = 0
@@ -166,6 +150,18 @@ internal class DictionaryWebViewState(
     var customCss: String = ""
     var aiExplanation: AiExplanationContent? = null
     private var lastAiExplanationPayload: String? = null
+
+    fun markShellReady(webView: WebView, generation: Long) {
+        if (generation != shellGeneration || pageReady) return
+        pageReady = true
+        webView.setTag(R.id.chima_webview_warm, true)
+        val enableRecursive = onRecursiveLookup != null
+        webView.evaluateJavascript("window.DictionaryRenderer.setRecursiveLookupEnabled($enableRecursive);", null)
+        injectFontSize(webView)
+        injectCustomCss(webView)
+        flush(webView)
+        injectAiExplanation(webView)
+    }
 
     fun injectAiExplanation(webView: WebView) {
         val payload = aiExplanation?.toJson()?.toString() ?: "null"
@@ -238,10 +234,14 @@ internal class DictionaryWebViewState(
         nextContentReadyRequestId++
         clearPendingPayload()
         onContentInvalidated?.invoke()
-        shellUrl = "https://chima.local/popup/?shell=${++shellGeneration}"
+        val generation = ++shellGeneration
+        // Signal readiness from this document after its renderer has loaded. Android's
+        // onPageFinished callback can belong to a shell replaced by a newer request.
+        val readyScript = "<script>DictionaryReadyBridge.shellReady($generation);</script>"
+        val shellHtml = html.replace("</body>", "$readyScript</body>")
         webView.loadDataWithBaseURL(
-            shellUrl,
-            html,
+            "https://chima.local/popup/",
+            shellHtml,
             "text/html",
             "UTF-8",
             null,
